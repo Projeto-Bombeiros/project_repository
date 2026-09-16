@@ -1,23 +1,20 @@
 # Integração
 
-Responsável pela unificação dos subsistemas de controle do robô.
+Responsável por conectar os grupos do projeto, padronizar a troca de informações e integrar os códigos desenvolvidos de forma fracionada.
 
 ## Responsabilidades
 
-- Integrar os comandos de movimentação;
-- Receber informações da visão e dos sensores;
-- Coordenar decisões de segurança;
-- Encaminhar dados para os demais subsistemas.
+* Convencionar os parâmetros de troca entre os grupos;
+* Verificar a correspondência semântica entre entradas e saídas;
+* Organizar os parâmetros com nome, origem e destino;
+* Integrar os módulos de código desenvolvidos pelos grupos;
+* Registrar incompatibilidades e pendências entre as interfaces.
 
-## Entradas
+## Entregas
 
-- Dados de visão;
-- Estado dos sensores;
-- Comandos do operador;
-- Estado dos atuadores.
+* Convenções de comunicação entre os grupos;
+* Lista organizada de parâmetros;
+* Correspondência entre entradas e saídas;
+* Código integrado dos diferentes módulos.
 
-## Saídas
-
-- Comandos de movimentação;
-- Decisões de parada;
-- Dados consolidados para o operador.
+O grupo de Integração não implementa as funções específicas dos demais grupos nem toma decisões operacionais; sua atuação concentra-se na conexão, padronização e integração dos módulos.
