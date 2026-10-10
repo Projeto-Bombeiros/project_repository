@@ -1,0 +1,4 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.bootstrap/python312",
+  "python-envs.workspaceSearchPaths": ["./**/.venv", "./.bootstrap/python312"]
+}

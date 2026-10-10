@@ -1,0 +1,25 @@
+{
+  "camera": {
+    "source": 0,
+    "reconnect_seconds": 2.0,
+    "stale_seconds": 1.0,
+    "mdns_name": "",
+    "stream_path": "/live",
+    "fallback_source": ""
+  },
+  "esp": {
+    "transport": "wifi_local",
+    "serial_port": "auto",
+    "baudrate": 115200,
+    "host": "192.168.4.1",
+    "port": 8765,
+    "reconnect_seconds": 1.5,
+    "bluetooth_port": "auto"
+  },
+  "xbox_index": 0,
+  "geometry": {
+    "track_width_m": 0,
+    "sprocket_radius_m": 0,
+    "output_max_rpm": 0
+  }
+}

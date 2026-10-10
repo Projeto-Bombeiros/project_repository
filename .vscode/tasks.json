@@ -1,0 +1,56 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "BLAZE: preparar notebooks (Python e dependências)",
+      "type": "process",
+      "command": "bash",
+      "args": [
+        "${workspaceFolder}/scripts/iniciar_teste_ubuntu.sh",
+        "notebooks"
+      ],
+      "windows": {
+        "command": "powershell.exe",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "${workspaceFolder}\\scripts\\iniciar_teste_windows.ps1",
+          "notebooks"
+        ]
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "BLAZE: abrir simulação",
+      "type": "process",
+      "command": "${workspaceFolder}/.bootstrap/python312/bin/python",
+      "args": [
+        "${workspaceFolder}/pc_operador/runtime_simulacao.py"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/pc_operador"
+      },
+      "windows": {
+        "command": "${workspaceFolder}\\.bootstrap\\python312\\Scripts\\python.exe"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "BLAZE: abrir combate real",
+      "type": "process",
+      "command": "${workspaceFolder}/.bootstrap/python312/bin/python",
+      "args": [
+        "${workspaceFolder}/pc_operador/runtime_combate_real.py"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/pc_operador"
+      },
+      "windows": {
+        "command": "${workspaceFolder}\\.bootstrap\\python312\\Scripts\\python.exe"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

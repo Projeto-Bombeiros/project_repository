@@ -1,0 +1,39 @@
+{
+  "vision": {
+    "fire_model": "models\\fire_yolo_best.pt",
+    "person_model": "models\\yolo11n.pt",
+    "legacy_setup_file": "",
+    "legacy_setup_name": "",
+    "radical_scene_fraction": 0.42,
+    "radical_scene_frames": 4,
+    "person_memory_seconds": 3.0,
+    "combat_mode": "simulation",
+    "camera_source": 0,
+    "source_type": "local",
+    "input_fps": 25,
+    "model_strategy": {
+      "fire": "existing",
+      "person": "existing",
+      "firefighter": "none"
+    },
+    "firefighter_model": "",
+    "params_override": {
+      "fire_conf": 0.3,
+      "person_conf": 0.7000000000000001,
+      "firefighter_conf": 0.7000000000000001,
+      "imgsz_infer": 640,
+      "detect_every_n_frames": 15,
+      "merge_iou": 0.45,
+      "max_fire_box_area_px": 8000,
+      "route_speed_px_frame": 30,
+      "jet_drop_px": 90,
+      "erase_radius_px": 80,
+      "restore_seconds": 20.0,
+      "human_safety_radius_px": 90,
+      "person_memory_seconds": 2.0000000000000004,
+      "input_fps": 25
+    },
+    "setup_label": "default",
+    "trajectory_export_dir": "../output/visao"
+  }
+}

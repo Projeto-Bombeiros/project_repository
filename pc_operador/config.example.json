@@ -1,0 +1,55 @@
+{
+  "camera": {
+    "source": 0,
+    "reconnect_seconds": 2.0,
+    "stale_seconds": 1.0,
+    "mdns_name": "",
+    "stream_path": "/live",
+    "fallback_source": ""
+  },
+  "esp": {
+    "transport": "wifi_local",
+    "serial_port": "auto",
+    "baudrate": 115200,
+    "host": "192.168.4.1",
+    "port": 8765,
+    "reconnect_seconds": 1.5,
+    "bluetooth_port": "auto"
+  },
+  "vision": {
+    "fire_model": "models/fire_yolo_best.pt",
+    "person_model": "models/yolo11n.pt",
+    "legacy_setup_file": "parameters_setups/user/rgb_monocular_fire_monitor_setups.json",
+    "legacy_setup_name": "",
+    "radical_scene_fraction": 0.42,
+    "radical_scene_frames": 4,
+    "person_memory_seconds": 3.0
+  },
+  "xbox_axes": {
+    "drive_x": 0,
+    "drive_y": 1,
+    "cannon_x": 2,
+    "cannon_y": 3
+  },
+  "xbox_index": 0,
+  "xbox_buttons": {
+    "mode": 0,
+    "cool_internal": 1,
+    "cool_external": 2,
+    "jet": 3,
+    "rearm": 6,
+    "stop": 7
+  },
+  "geometry": {
+    "track_width_m": 0,
+    "sprocket_radius_m": 0,
+    "output_max_rpm": 0
+  },
+  "control": {
+    "schema_version": 4,
+    "camera_scan_speed_deg_s": 12,
+    "camera_manual_speed_deg_s": 45,
+    "camera_edge_offset_px": 8,
+    "camera_recenter_step_deg": 20
+  }
+}
