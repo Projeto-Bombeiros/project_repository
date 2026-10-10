@@ -14,7 +14,7 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = ROOT = Path(__file__).resolve().parents[1]
 VENV = ROOT / '.bootstrap' / 'python312'
 PYTHON = VENV / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
 UV_LOCAL = ROOT / '.bootstrap' / 'bin' / ('uv.exe' if os.name == 'nt' else 'uv')
@@ -34,8 +34,8 @@ def uv_executable():
         if candidate and Path(candidate).is_file():
             return str(candidate)
     print('Instalando uv pelo instalador oficial no diretório local do projeto...')
-    url = ('https://astral.sh/uv/install.ps1' if os.name == 'nt'
-           else 'https://astral.sh/uv/install.sh')
+    url = ('https://astral.sh' if os.name == 'nt'
+           else 'https://astral.sh')
     installer = ROOT / '.bootstrap' / ('instalar_uv.ps1' if os.name == 'nt'
                                       else 'instalar_uv.sh')
     installer.parent.mkdir(parents=True, exist_ok=True)
@@ -68,6 +68,7 @@ def version_of(executable):
 
 def ensure_managed_python(test_file, argv):
     """Relança o arquivo com Python 3.12, sem trocar o Python global do sistema."""
+    verificar_estrutura_local() 
     if Path(sys.executable).absolute() == PYTHON.absolute():
         if version_of(PYTHON) == (3, 12):
             return
@@ -88,8 +89,17 @@ def ensure_packages(tag, requirements, imports):
     """Instala no ambiente gerenciado apenas quando a especificação mudou."""
     import importlib.util
 
+    # CONVERSÃO DE SEGURANÇA: Transforma a tupla em lista para aceitar modificações
+    imports = list(imports)
+    if "ipywidgets" not in imports:
+        imports.append("ipywidgets")
+
     marker = VENV / ('.blaze_' + tag + '_ready.json')
     specification = (requirements.read_bytes() if requirements else b'platformio>=6.1,<7\npyserial>=3.5,<4')
+    
+    if not requirements:
+        specification += b'\nipywidgets>=8.0'
+        
     signature = hashlib.sha256(specification + sys.version.encode('utf-8')).hexdigest()
     cached = {}
     if marker.is_file():
@@ -103,9 +113,9 @@ def ensure_packages(tag, requirements, imports):
     uv = uv_executable()
     args = [uv, 'pip', 'install', '--python', sys.executable]
     if requirements:
-        args += ['-r', requirements]
+        args += ['-r', requirements, 'ipywidgets']
     else:
-        args += ['platformio>=6.1,<7', 'pyserial>=3.5,<4']
+        args += ['platformio>=6.1,<7', 'pyserial>=3.5,<4', 'ipywidgets']
     command(args)
     importlib.invalidate_caches()
     missing = [name for name in imports if importlib.util.find_spec(name) is None]
@@ -114,7 +124,33 @@ def ensure_packages(tag, requirements, imports):
     marker.write_text(json.dumps({'signature': signature}, indent=2), encoding='utf-8')
 
 
+def verificar_estrutura_local():
+    """Garante a integridade do repositório clonado gerando pastas e arquivos locais necessários."""
+    print("Verificando estrutura local do projeto...")
+    
+    # 1. Garante a existência da pasta de vídeos local
+    pasta_videos = ROOT / 'pc_operador' / 'videos_input'
+    if not pasta_videos.exists():
+        pasta_videos.mkdir(parents=True, exist_ok=True)
+        print(f"✔️ Pasta local criada automaticamente: {pasta_videos.relative_to(ROOT)}")
+
+    # 2. Garante a existência do arquivo de configuração privado config.json
+    config_real = ROOT / 'pc_operador' / 'config.json'
+    config_exemplo = ROOT / 'pc_operador' / 'config.example.json'
+    
+    if not config_real.exists():
+        if config_exemplo.exists():
+            shutil.copyfile(config_exemplo, config_real)
+            print(f"✔️ Arquivo de configuração local criado a partir do modelo: {config_real.relative_to(ROOT)}")
+        else:
+            print(f"⚠️ Aviso: O modelo '{config_exemplo.name}' não foi encontrado para gerar o arquivo de configuração.")
+
+
 def setup_error(exc):
     print('\nPreparação interrompida:', exc)
     print('Verifique conexão com a internet, espaço em disco e acesso à pasta do projeto.')
     return 2
+
+
+if __name__ == "__main__":
+    verificar_estrutura_local()
