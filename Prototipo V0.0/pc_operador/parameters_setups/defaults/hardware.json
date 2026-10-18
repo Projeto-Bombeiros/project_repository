@@ -1,0 +1,44 @@
+{
+  "esp": {
+    "transport": "wifi_local",
+    "serial_port": "auto",
+    "host": "192.168.4.1"
+  },
+  "hardware": {
+    "upload_port": "auto",
+    "host": "192.168.4.1",
+    "transport": "wifi_local",
+    "physical_outputs": false,
+    "jet_output_enabled": false,
+    "drive_kind": "dc_3_6v",
+    "drive_motor_id": "dc_3_6v",
+    "drive_motor_model": "DC 3-6V",
+    "drive_driver_id": "bts7960",
+    "drive_driver_model": "BTS7960",
+    "cannon_kind": "mg996r",
+    "cannon_motor_id": "mg996r",
+    "cannon_driver_id": "mg996r_pwm",
+    "cannon_driver_model": "MG996R-PWM",
+    "gear_ratio": 1.0,
+    "ensaios": {
+      "upload": false,
+      "motors": false,
+      "servos": false,
+      "relays": false
+    },
+    "camera_servo_kind": "sg90",
+    "camera_servo_model": "SG90",
+    "camera_driver_model": "PWM direto do ESP32 (sinal, não alimentação)",
+    "focus_actuator_model": "SG90",
+    "focus_driver_model": "PWM direto do ESP32 (sinal, não alimentação)",
+    "focus_dispersed_deg": 175,
+    "focus_focused_deg": 5,
+    "interface_board_id": "none",
+    "pan_servo_kind": "mg996r",
+    "tilt_servo_kind": "mg996r",
+    "pan_servo_model": "MG996R",
+    "tilt_servo_model": "MG996R",
+    "dht_internal_type": "DHT22",
+    "dht_external_type": "DHT22"
+  }
+}

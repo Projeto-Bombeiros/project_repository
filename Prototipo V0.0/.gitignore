@@ -1,0 +1,13 @@
+.bootstrap/
+output/
+**/.pio/
+**/__pycache__/
+*.pyc
+esp32/include/secrets.h
+pc_operador/config.json
+pc_operador/parameters_setups/official/active.json
+pc_operador/parameters_setups/user/network_credentials.json
+pc_operador/parameters_setups/user/components.json
+pc_operador/runs/
+pc_operador/videos_input/*
+!pc_operador/videos_input/.gitkeep
