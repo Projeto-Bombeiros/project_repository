@@ -1,0 +1,20 @@
+{
+  "ESP-wifi-local_Tr0.14m_R0.03m_2c9b4a": {
+    "esp": {
+      "transport": "wifi_local",
+      "serial_port": "auto",
+      "baudrate": 460800,
+      "host": "192.168.4.1",
+      "port": 8765,
+      "reconnect_seconds": 1.5
+    },
+    "geometry": {
+      "track_width_m": 0.14,
+      "sprocket_radius_m": 0.03,
+      "output_max_rpm": 60.0
+    },
+    "_meta": {
+      "saved_at": "2026-10-23T14:32:02.123190-03:00"
+    }
+  }
+}

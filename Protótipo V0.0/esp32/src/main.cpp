@@ -142,7 +142,7 @@ void setup() {
     pinMode(pins::led_status, OUTPUT);
   }
   communication.begin();
-  Serial.println("BLAZE prototipo: aguarda camera, comandos validos e REARMAR.");
+  Serial.println("BLAZE prototipo: modo manual independe da camera; autonomia exige visao valida.");
   Serial.print("Setup oficial: "); Serial.println(BLAZE_SETUP_NAME);
 }
 
@@ -200,7 +200,7 @@ CentralSnapshot Central::update(const Command &cmd, bool connected,
     armed_ = false;
     rearm_released_ = !cmd.rearm;
     state.reason = "operator_stop";
-  } else if (!cmd.vision_valid) {
+  } else if (auto_mode_ && !cmd.vision_valid) {
     armed_ = false;
     rearm_released_ = !cmd.rearm;
     state.reason = "vision_unavailable";
@@ -220,7 +220,10 @@ CentralSnapshot Central::update(const Command &cmd, bool connected,
   }
   state.armed = armed_;
   last_rearm_ = cmd.rearm;
-  state.safe = connected && cmd.valid && !cmd.calibrating && cmd.vision_valid &&
+  // Sem imagem, o operador ainda pode conduzir manualmente. A visao continua
+  // obrigatoria para o modo autonomo; parada, rearme e enlace valem em ambos.
+  state.safe = connected && cmd.valid && !cmd.calibrating &&
+               (!auto_mode_ || cmd.vision_valid) &&
                !cmd.person_detected && !cmd.stop;
   state.allow_motion = state.safe && armed_ && !cmd.brake;
   state.allow_jet = state.safe && armed_ && cmd.water_on &&
@@ -350,6 +353,30 @@ void Motion::diagnostic(float left, float right) {
 #include "pwm_compat.h"
 
 namespace {
+constexpr float SERVO_RATE_DEG_S = 65.f;
+constexpr float SERVO_ACCEL_DEG_S2 = 220.f;
+constexpr float SERVO_TARGET_DEADBAND_DEG = .35f;
+
+void followServoTarget(float &position, float &velocity, float target, float dt) {
+  const float error = target - position;
+  if (std::fabs(error) <= SERVO_TARGET_DEADBAND_DEG && std::fabs(velocity) < 5.f) {
+    velocity = 0.f;
+    return;
+  }
+  const float braking_speed = std::sqrt(2.f * SERVO_ACCEL_DEG_S2 * std::fabs(error));
+  const float desired = (error < 0.f ? -1.f : 1.f) *
+                        std::fmin(SERVO_RATE_DEG_S, braking_speed);
+  const float dv = SERVO_ACCEL_DEG_S2 * dt;
+  velocity += clampf(desired - velocity, -dv, dv);
+  const float step = velocity * dt;
+  if ((error >= 0.f && step >= error) || (error <= 0.f && step <= error)) {
+    position = target;
+    velocity = 0.f;
+  } else {
+    position = clampf(position + step, 0.f, 180.f);
+  }
+}
+
 void relay(int pin, bool on) {
   if (!BLAZE_ENABLE_PHYSICAL_OUTPUTS || pin < 0) return;
   digitalWrite(pin, (on != pins::relay_active_low) ? HIGH : LOW);
@@ -378,6 +405,14 @@ void CannonJet::begin() {
 void CannonJet::servo(int pin, unsigned channel, float angle) {
   if (!BLAZE_ENABLE_PHYSICAL_OUTPUTS || pin < 0) return;
   if (BLAZE_CANNON_KIND != 1 && (channel == 4 || channel == 5)) return;
+  const unsigned index = channel - 4;
+  if (index >= 4) return;
+  const unsigned long now = millis();
+  // O LEDC mantém o último pulso. Evita escrever setpoints quase idênticos
+  // milhares de vezes por segundo, sem retirar o torque de sustentação.
+  if (std::isfinite(last_servo_angle_[index]) &&
+      (now - last_servo_write_ms_[index] < 20 ||
+       std::fabs(angle - last_servo_angle_[index]) < .55f)) return;
   // LEDC 50 Hz/16 bits; faixa estendida para SG90 e MG996R.
   // Um comando logico de 180 graus nao garante curso fisico de 180 graus.
   const float pulse_min_us = 500.f;
@@ -386,6 +421,8 @@ void CannonJet::servo(int pin, unsigned channel, float angle) {
                       (pulse_max_us - pulse_min_us) / 180.f;
   const unsigned duty = unsigned(pulse * 65535.f / 20000.f);
   blazePwmWrite(pin, channel, duty);
+  last_servo_angle_[index] = clampf(angle, 0.f, 180.f);
+  last_servo_write_ms_[index] = now;
 }
 
 CannonReport CannonJet::update(const Command &cmd, const CentralSnapshot &state) {
@@ -396,25 +433,50 @@ CannonReport CannonJet::update(const Command &cmd, const CentralSnapshot &state)
   if (cmd.valid && state.connected && !cmd.stop && !cmd.emergency &&
       BLAZE_ENABLE_PHYSICAL_OUTPUTS && pins::servo_camera_pan >= 0) {
     // Setpoint de posição. O feedback interno do servo não é medido pelo ESP.
-    camera_pan_ = clampf(cmd.camera_pan, cmd.camera_min, cmd.camera_max);
+    const float demand = clampf(cmd.camera_pan, cmd.camera_min, cmd.camera_max);
+    if (std::fabs(demand - camera_target_) >= SERVO_TARGET_DEADBAND_DEG)
+      camera_target_ = demand;
   }
-  if (BLAZE_CANNON_KIND == 1 && cmd.valid && state.connected && cmd.calibrating && !cmd.stop && !cmd.emergency &&
+  if (!cmd.valid || !state.connected || cmd.stop || cmd.emergency) {
+    // Interrompe trajetórias pendentes, mesmo se um snapshot de permissões
+    // estiver temporariamente atrasado em relação ao comando de parada.
+    pan_target_ = pan_; tilt_target_ = tilt_; camera_target_ = camera_pan_;
+    pan_velocity_ = tilt_velocity_ = camera_velocity_ = 0.f;
+  } else if (BLAZE_CANNON_KIND == 1 && cmd.calibrating &&
       BLAZE_ENABLE_PHYSICAL_OUTPUTS) {
-    pan_ = clampf(cmd.calibration_pan, cmd.pan_min, cmd.pan_max);
-    tilt_ = clampf(cmd.calibration_tilt, cmd.tilt_min, cmd.tilt_max);
+    pan_target_ = clampf(cmd.calibration_pan, cmd.pan_min, cmd.pan_max);
+    tilt_target_ = clampf(cmd.calibration_tilt, cmd.tilt_min, cmd.tilt_max);
   } else if (BLAZE_CANNON_KIND == 1 && state.allow_motion) {
     if (state.auto_mode && cmd.target_valid) {
-      pan_ = clampf(cmd.auto_pan,cmd.pan_min,cmd.pan_max);
-      tilt_ = clampf(cmd.auto_tilt,cmd.tilt_min,cmd.tilt_max);
+      const float pan = clampf(cmd.auto_pan,cmd.pan_min,cmd.pan_max);
+      const float tilt = clampf(cmd.auto_tilt,cmd.tilt_min,cmd.tilt_max);
+      if (std::fabs(pan - pan_target_) >= SERVO_TARGET_DEADBAND_DEG) pan_target_ = pan;
+      if (std::fabs(tilt - tilt_target_) >= SERVO_TARGET_DEADBAND_DEG) tilt_target_ = tilt;
     } else if (!state.auto_mode && cmd.manual_target_valid) {
-      pan_ = clampf(cmd.manual_pan, cmd.pan_min, cmd.pan_max);
-      tilt_ = clampf(cmd.manual_tilt, cmd.tilt_min, cmd.tilt_max);
+      const float pan = clampf(cmd.manual_pan, cmd.pan_min, cmd.pan_max);
+      const float tilt = clampf(cmd.manual_tilt, cmd.tilt_min, cmd.tilt_max);
+      if (std::fabs(pan - pan_target_) >= SERVO_TARGET_DEADBAND_DEG) pan_target_ = pan;
+      if (std::fabs(tilt - tilt_target_) >= SERVO_TARGET_DEADBAND_DEG) tilt_target_ = tilt;
     } else if (!state.auto_mode) {
       // O stick determina taxa angular comandada, não posição instantânea.
-      pan_ = clampf(pan_ + cmd.cannon_x * cmd.cannon_rate_deg_s * dt, cmd.pan_min, cmd.pan_max);
-      tilt_ = clampf(tilt_ - cmd.cannon_y * cmd.cannon_rate_deg_s * dt, cmd.tilt_min, cmd.tilt_max);
+      pan_target_ = clampf(pan_target_ + cmd.cannon_x * cmd.cannon_rate_deg_s * dt,
+                           cmd.pan_min, cmd.pan_max);
+      tilt_target_ = clampf(tilt_target_ - cmd.cannon_y * cmd.cannon_rate_deg_s * dt,
+                            cmd.tilt_min, cmd.tilt_max);
+    } else {
+      // O alvo desapareceu no modo automático: não siga rumo ao último fogo.
+      pan_target_ = pan_; tilt_target_ = tilt_;
+      pan_velocity_ = tilt_velocity_ = 0.f;
     }
+  } else {
+    // Pessoa detectada ou outro intertravamento: canhão permanece na
+    // posição já comandada, sem completar uma trajetória antiga.
+    pan_target_ = pan_; tilt_target_ = tilt_;
+    pan_velocity_ = tilt_velocity_ = 0.f;
   }
+  followServoTarget(pan_, pan_velocity_, pan_target_, dt);
+  followServoTarget(tilt_, tilt_velocity_, tilt_target_, dt);
+  followServoTarget(camera_pan_, camera_velocity_, camera_target_, dt);
   servo(pins::servo_pan, 4, pan_);
   servo(pins::servo_tilt, 5, tilt_);
   servo(pins::servo_camera_pan, 6, camera_pan_);
@@ -427,9 +489,9 @@ CannonReport CannonJet::update(const Command &cmd, const CentralSnapshot &state)
   servo(pins::servo_focus, 7, focus_angle_);
   report.focus_angle_commanded = focus_angle_;
   report.focus_servo_configured = BLAZE_ENABLE_PHYSICAL_OUTPUTS && pins::servo_focus >= 0;
-  report.pan_commanded = pan_;
-  report.tilt_commanded = tilt_;
-  report.camera_pan_commanded = camera_pan_;
+  report.pan_commanded = std::isfinite(last_servo_angle_[0]) ? last_servo_angle_[0] : pan_;
+  report.tilt_commanded = std::isfinite(last_servo_angle_[1]) ? last_servo_angle_[1] : tilt_;
+  report.camera_pan_commanded = std::isfinite(last_servo_angle_[2]) ? last_servo_angle_[2] : camera_pan_;
   // Os servos RC comuns não transmitem posição física ao ESP32.
   report.pan_feedback_raw = -1;
   report.tilt_feedback_raw = -1;
@@ -445,9 +507,9 @@ CannonReport CannonJet::update(const Command &cmd, const CentralSnapshot &state)
   // Aguarde o alvo teórico e a plataforma alcançarem seus setpoints limitados
   // antes de permitir o jato autônomo. Posição PWM ainda não é feedback físico.
   const bool theoretical_alignment = !state.auto_mode ||
-      (fabsf(pan_ - clampf(cmd.auto_pan,cmd.pan_min,cmd.pan_max)) <= 3.f &&
-       fabsf(tilt_ - clampf(cmd.auto_tilt,cmd.tilt_min,cmd.tilt_max)) <= 3.f &&
-       fabsf(camera_pan_ - clampf(cmd.camera_pan,cmd.camera_min,cmd.camera_max)) <= 2.f);
+      (fabsf(report.pan_commanded - clampf(cmd.auto_pan,cmd.pan_min,cmd.pan_max)) <= 2.f &&
+       fabsf(report.tilt_commanded - clampf(cmd.auto_tilt,cmd.tilt_min,cmd.tilt_max)) <= 2.f &&
+       fabsf(report.camera_pan_commanded - clampf(cmd.camera_pan,cmd.camera_min,cmd.camera_max)) <= 2.f);
   const bool requested = BLAZE_CANNON_KIND == 1 && state.allow_jet &&
                          cmd.jet_enable && theoretical_alignment;
   report.jet_virtual = requested;  // pedido aplicado à simulação da chama impressa
@@ -457,17 +519,22 @@ CannonReport CannonJet::update(const Command &cmd, const CentralSnapshot &state)
 }
 
 void CannonJet::panDiagnostic(float angle) {
-  pan_ = clampf(angle, 0, 180);
+  pan_ = pan_target_ = clampf(angle, 0, 180);
+  pan_velocity_ = 0;
+  // O diagnóstico roda a cada 10 ms: não reprograme o mesmo duty em todo ciclo.
+  // O hardware LEDC continua emitindo o pulso de sustentação sozinho.
   servo(pins::servo_pan, 4, pan_);
 }
 
 void CannonJet::tiltDiagnostic(float angle) {
-  tilt_ = clampf(angle, 0, 180);
+  tilt_ = tilt_target_ = clampf(angle, 0, 180);
+  tilt_velocity_ = 0;
   servo(pins::servo_tilt, 5, tilt_);
 }
 
 void CannonJet::cameraDiagnostic(float angle) {
-  camera_pan_ = clampf(angle, 0, 180);
+  camera_pan_ = camera_target_ = clampf(angle, 0, 180);
+  camera_velocity_ = 0;
   servo(pins::servo_camera_pan, 6, camera_pan_);
 }
 

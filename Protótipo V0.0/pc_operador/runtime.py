@@ -437,6 +437,7 @@ class OperatorInputs:
         self.camera_last_motion = self.camera_last_update
         self.camera_settle_until = self.camera_last_update + .45
         self.camera_edge_last = 0.0
+        self.camera_edge_press_since = None
         self.camera_edge_latched = False
         self.servo_pan_commanded = None
         self.servo_tilt_commanded = None
@@ -608,7 +609,10 @@ class OperatorInputs:
                 self._held_fired = {'link_hold': False, 'stop': False}
                 self.previous_buttons.clear()
             self.drive_x, self.drive_y = self._axis(x), self._axis(y)
-            self.cannon_x, self.cannon_y = self._axis(cx), self._axis(cy)
+            # O stick direito tem zona neutra maior: ruído perto do centro
+            # não integra pequenos comandos contínuos no alvo do canhão.
+            self.cannon_x = 0. if abs(cx) < .14 else self._axis(cx)
+            self.cannon_y = 0. if abs(cy) < .14 else self._axis(cy)
             pending = self._pending_actions[:]
             self._pending_actions.clear()
         for name in pending:
@@ -620,7 +624,8 @@ class OperatorInputs:
             # Sem RPM máxima medida não é possível garantir o teto escolhido.
             if self.calibrated_max_rpm > 0:
                 scale = min(1., max(0., self.speed_limit_rpm) / self.calibrated_max_rpm)
-                denominator = max(1., abs(-y + x), abs(-y - x))
+                turn = .45 * x * abs(x)
+                denominator = max(1., abs(-y + turn), abs(-y - turn))
                 throttle=self.lt if self._want_link and not self.brake else 0.
                 x, y = x * scale * throttle / denominator, y * scale * throttle / denominator
             else:
@@ -639,7 +644,7 @@ class OperatorInputs:
                 "manual_tilt": self.manual_target_tilt if self.manual_target_tilt is not None else 90.,
                 "auto_follow_pan": self.auto_follow_pan,
                 "auto_follow_tilt": self.auto_follow_tilt,
-                "cannon_rate_deg_s": min(120., max(30., self.speed_limit_rpm * 6.)),
+                "cannon_rate_deg_s": min(65., max(20., self.speed_limit_rpm * 6.)),
                 "cool_manual": self.cool_internal or self.cool_external,
                 "cool_internal": self.cool_internal,
                 "cool_external": self.cool_external,
@@ -679,6 +684,7 @@ class OperatorInputs:
             if self.stop or not self._want_link or self.emergency:
                 self.manual_target_pan = self.manual_target_tilt = None
                 self.auto_follow_pan = self.auto_follow_tilt = None
+                self.camera_edge_press_since = None
                 return
             margin=float(settings.get('camera_edge_offset_px',8))
             def bounds():
@@ -706,7 +712,7 @@ class OperatorInputs:
                 self.camera_pan_deg = clamp(self.camera_pan_deg + direction *
                     min(float(settings.get('camera_manual_speed_deg_s', 45.)),
                         float(settings.get('calibrated_servo_rate_deg_s',360.))) * dt, 0, 180)
-                rate=float(settings.get('cannon_rate_deg_s',90.))
+                rate=min(65., max(1., float(settings.get('cannon_rate_deg_s',90.))))
                 pan_demand=((self.manual_target_pan if self.manual_target_pan is not None
                              else pan_now)+(self.camera_pan_deg-previous)*int(bool(direction))+
                             self.cannon_x*rate*dt)
@@ -722,20 +728,32 @@ class OperatorInputs:
                 low,high=sorted((left,right))
                 # A calibração pode mapear apenas ~20° da imagem. Não use essa
                 # faixa para recortar o movimento físico do canhão.
-                if not direction and now-self.camera_edge_last>.18:
-                    edge=(1 if pan_demand>=high else -1 if pan_demand<=low else 0)
-                    if edge:
+                edge=(1 if pan_demand>=high else -1 if pan_demand<=low else 0)
+                # O pan pode continuar sobre a borda quando o stick é solto.
+                # Sem esta condição a câmera recebia saltos de 20° em repouso.
+                pushing_edge = (not direction and edge and
+                                self.cannon_x * edge > .20)
+                if pushing_edge:
+                    if self.camera_edge_press_since is None:
+                        self.camera_edge_press_since=now
+                    if (now-self.camera_edge_press_since>=.15 and
+                        now>=self.camera_settle_until and
+                        now-self.camera_edge_last>=.45):
                         step=clamp(settings.get('camera_recenter_step_deg',20),1,60)
                         moved=clamp(self.camera_pan_deg+edge*step,0,180)
                         if moved != self.camera_pan_deg:
                             self.camera_pan_deg=moved
                             self.camera_edge_last=now
+                else:
+                    self.camera_edge_press_since=None
                 self.manual_target_pan=pan_demand
                 self.manual_target_tilt=tilt_demand
                 if abs(self.camera_pan_deg-previous) > 1e-4:
                     self.camera_last_motion = now
-                    self.camera_settle_until = now + max(.45, abs(self.camera_pan_deg-previous)/max(1.,float(settings.get("calibrated_servo_rate_deg_s",90)))+.2)
+                    servo_rate=min(65.,max(1.,float(settings.get("calibrated_servo_rate_deg_s",90))))
+                    self.camera_settle_until = now + max(.55, abs(self.camera_pan_deg-previous)/servo_rate+.35)
                 return
+            self.camera_edge_press_since = None
             self.manual_target_pan = self.manual_target_tilt = None
             if not vision_recent or person_blocked:
                 self.auto_follow_pan = self.auto_follow_tilt = None
@@ -763,7 +781,8 @@ class OperatorInputs:
                     self.camera_pan_deg = clamp(self.camera_pan_deg + direction * step, 0, 180)
                     if abs(self.camera_pan_deg-previous) > 1e-4:
                         self.camera_last_motion = now
-                        self.camera_settle_until = now + max(.45,abs(self.camera_pan_deg-previous)/max(1.,float(settings.get("calibrated_servo_rate_deg_s",90)))+.2)
+                        servo_rate=min(65.,max(1.,float(settings.get("calibrated_servo_rate_deg_s",90))))
+                        self.camera_settle_until = now + max(.55,abs(self.camera_pan_deg-previous)/servo_rate+.35)
                     self.camera_edge_latched = True
                     self.camera_edge_last = now
             else:

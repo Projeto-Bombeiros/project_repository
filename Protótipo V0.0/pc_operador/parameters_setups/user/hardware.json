@@ -1,0 +1,34 @@
+{
+  "ESP-DC3-6V_l298n_P-mg996r_T-mg996r_C-sg90_F-SG90_Fisico_Jato_5723d7": {
+    "esp": {
+      "transport": "wifi_local",
+      "serial_port": "auto",
+      "host": "192.168.4.1"
+    },
+    "hardware": {
+      "drive_kind": "dc_3_6v",
+      "drive_motor_id": "dc_3_6v",
+      "drive_driver_id": "l298n",
+      "cannon_kind": "mg996r",
+      "cannon_motor_id": "mg996r",
+      "cannon_driver_id": "mg996r_pwm",
+      "pan_servo_kind": "mg996r",
+      "tilt_servo_kind": "mg996r",
+      "camera_servo_kind": "sg90",
+      "focus_actuator_model": "SG90",
+      "dht_internal_type": "DHT22",
+      "dht_external_type": "DHT22",
+      "focus_driver_model": "PWM direto do ESP32 (sinal, não alimentação)",
+      "focus_dispersed_deg": 175,
+      "focus_focused_deg": 5,
+      "interface_board_id": "none",
+      "gear_ratio": 1.0,
+      "physical_outputs": true,
+      "jet_output_enabled": true,
+      "upload_port": "auto"
+    },
+    "_meta": {
+      "saved_at": "2026-10-23T14:35:47.403735-03:00"
+    }
+  }
+}

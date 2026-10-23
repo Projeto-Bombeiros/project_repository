@@ -181,6 +181,10 @@ def _r12_deadzone(value,threshold=.08):
     value=float(value)
     return 0. if abs(value)<threshold else max(-1.,min(1.,value))
 
+def _r12_steering(value):
+    x=_r12_deadzone(value)
+    return .45*x*abs(x)
+
 def _r12_apply_control(s, c, now, dt, rpm_limit, geometry, camera_settings=None):
     """Simula a máquina de estados; não envia sinais ao ESP32."""
     camera_settings = camera_settings or {}
@@ -239,8 +243,9 @@ def _r12_apply_control(s, c, now, dt, rpm_limit, geometry, camera_settings=None)
             throttle=0.
         x=_r12_deadzone(c.get('drive_x',0));y=-_r12_deadzone(c.get('drive_y',0))
         s['throttle']=throttle
-        left=throttle*max(-1.,min(1.,y+x))
-        right=throttle*max(-1.,min(1.,y-x))
+        turn=_r12_steering(x)
+        left=throttle*max(-1.,min(1.,y+turn))
+        right=throttle*max(-1.,min(1.,y-turn))
         s['left_rpm']=rpm_limit*left;s['right_rpm']=rpm_limit*right
         pressure=max(0.,min(1.,float(c.get('rt',0))))
         s['pressure']=pressure if s['water'] else 0.
@@ -351,6 +356,15 @@ class CentralOperador(blaze_runtime.OperatorApp):
             }, {'valid': False, 'target_valid': False,
                 'person_detected': False, 'pan': 90, 'tilt': 90})
         command = super()._command()
+        if command['mode'] == 'auto' and not command['vision_valid']:
+            # Uma camera ausente ou inferencia indisponivel nao deve manter o
+            # operador em autonomia. A volta exige nova escolha pelo Xbox.
+            with self.inputs._lock:
+                self.inputs.requested_mode = 'manual'
+                self.inputs.ack_mode = None
+            command['mode'] = 'manual'
+            command['target_valid'] = False
+            command['jet_enable'] = False
         state = self.inputs.snapshot()
         if command['mode']=='manual' and state.get('manual_target_valid'):
             command['manual_target_valid']=True
@@ -755,6 +769,10 @@ class CentralOperador(blaze_runtime.OperatorApp):
             vision = self.vision.snapshot()
             stamp = getattr(vision, 'frame_stamp', 0) or 0
             vision_recent = bool(stamp and time.monotonic() - stamp < 1.0)
+            if self.simulation and not vision.valid and self.sim_state['mode'] == 'auto':
+                self.sim_state['mode'] = 'manual'
+                self.sim_state['hint'] = ('Visao indisponivel: modo manual ativo. '
+                                          'Selecione autonomia novamente apos o retorno do video.')
             raw_frame, raw_stamp = self.camera.latest()
             if not self.simulation:
                 self.inputs.update_camera(getattr(self.vision.engine,'last_record',{}),
@@ -885,8 +903,9 @@ class CentralOperador(blaze_runtime.OperatorApp):
             right_cmd = virtual['right_rpm']/max(1., float(self.config.data.get('control', {}).get('speed_limit_rpm', 80))) if virtual else telemetry.get('drive_right_commanded')
             if left_cmd is None or right_cmd is None:
                 x,y=float(operator.get('drive_x',0)),float(operator.get('drive_y',0))
-                left_cmd,right_cmd=(blaze_runtime.clamp(-y+x,-1,1),
-                                    blaze_runtime.clamp(-y-x,-1,1))
+                turn=_r12_steering(x)
+                left_cmd,right_cmd=(blaze_runtime.clamp(-y+turn,-1,1),
+                                    blaze_runtime.clamp(-y-turn,-1,1))
             self._set_numeric('left',left_cmd,digits=2)
             self._set_numeric('right',right_cmd,digits=2)
             geometry = self.config.data.get('geometry', {})
@@ -949,19 +968,22 @@ class CentralOperador(blaze_runtime.OperatorApp):
                 ('hum_ext', 'humidity_external', 'sensor_external_valid', ' %')):
                 value = telemetry.get(reading_key) if telemetry.get(valid_key) else None
                 self._set_numeric(display_key,value,unit)
-            if not raw_stamp:
+            if linked and not self.simulation and not self._matching_firmware():
+                self.status.set('FIRMWARE DIFERENTE DO SETUP SELECIONADO: saídas bloqueadas. '
+                                'Compile e grave a combinação mostrada no início do runtime.')
+            elif not raw_stamp:
                 reason = self.camera.last_error or f'Aguardando fonte {self.camera.source}'
-                self.status.set('Vídeo indisponível: ' + str(reason))
+                self.status.set('Sem vídeo: modo manual disponível após conectar Xbox e ESP32 e rearmar. '
+                                'Detecção de pessoas e combate autônomo indisponíveis. '
+                                'Câmera: ' + str(reason))
             elif self.vision_session is None:
-                self.status.set(self.vision_warning or 'Câmera ativa; modelos de visão indisponíveis.')
+                self.status.set((self.vision_warning or 'Modelos de visão indisponíveis.') +
+                                ' Controle manual disponível; autonomia indisponível.')
             elif self.simulation and not vision_recent:
                 self.status.set('Câmera ativa; vídeo bruto exibido enquanto a inferência inicia.')
             elif self.simulation:
                 self.status.set('Simulação local: Xbox e visão independentes dos atuadores físicos. '
                                 + (self.vision_warning or virtual['hint']))
-            elif linked and not self._matching_firmware():
-                self.status.set('FIRMWARE DIFERENTE DO SETUP SELECIONADO: saídas bloqueadas. '
-                                'Compile e grave a combinação mostrada no início do runtime.')
             elif linked and operator.get('requested_mode') == 'auto' and not \
                     blaze_runtime.camera_calibration_complete(self.config.vision.calibration):
                 self.status.set('CALIBRAÇÃO PENDENTE: registre os 12 pontos no seletor inicial. '

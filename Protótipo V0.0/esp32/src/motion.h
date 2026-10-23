@@ -3,9 +3,15 @@
 #include "types.h"
 
 struct TrackTargets { float left, right; };
+inline float steeringInput(float x) {
+  // Curva progressiva: pequena deflexão lateral produz curva suave.
+  const float limited = clampf(x, -1.f, 1.f);
+  return 0.45f * limited * fabsf(limited);
+}
 inline TrackTargets mixDrive(float drive_x, float drive_y) {
   const float forward = -drive_y;
-  return {clampf(forward + drive_x, -1, 1), clampf(forward - drive_x, -1, 1)};
+  const float turn = steeringInput(drive_x);
+  return {clampf(forward + turn, -1, 1), clampf(forward - turn, -1, 1)};
 }
 
 class Motion {
