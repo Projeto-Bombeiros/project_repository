@@ -990,7 +990,8 @@ def run(profile: str) -> None:
         drive=hw.get('drive_kind','bts7960_12v');cannon=hw.get('cannon_kind','mg996r')
         driver=hw.get('drive_driver_model') or 'não selecionado'
         motor=hw.get('drive_motor_model') or drive
-        servo=hw.get('cannon_motor_model') or ('HT23-EC1000-K' if cannon=='ht23_ec1000' else 'MG996R')
+        servo=hw.get('cannon_motor_model') or ('HT23-EC1000-K' if cannon=='ht23_ec1000' else
+              hw.get('pan_servo_model', 'MG90S'))
         cannon_driver=hw.get('cannon_driver_model') or 'não selecionado'
         transport=str(config.data.get('esp',{}).get('transport','wifi_local') if config else 'wifi_local')
         serial_port=str(config.data.get('esp',{}).get('serial_port','auto') if config else 'auto')

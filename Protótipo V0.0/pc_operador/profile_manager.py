@@ -189,12 +189,13 @@ def assemble(name: str) -> dict:
         raise ValueError('O protótipo requer canais de servos RC PWM no canhão.')
     for axis in ('pan', 'tilt', 'camera'):
         kind = str(hardware.get(f'{axis}_servo_kind',
-                   hardware.get('camera_servo_kind', 'mg996r') if axis == 'camera'
-                   else hardware.get('cannon_motor_id', 'mg996r'))).lower()
-        if kind not in ('mg996r', 'sg90'):
-            raise ValueError(f'{axis}: selecione MG996R ou SG90.')
+                   hardware.get('camera_servo_kind', 'sg90') if axis == 'camera'
+                   else hardware.get('cannon_motor_id', 'mg90s'))).lower()
+        if kind not in ('mg90s', 'sg90', 'mg996r'):
+            raise ValueError(f'{axis}: selecione MG90S, SG90 ou MG996R.')
         hardware[f'{axis}_servo_kind'] = kind
-        hardware[f'{axis}_servo_model'] = {'mg996r': 'MG996R', 'sg90': 'SG90'}[kind]
+        hardware[f'{axis}_servo_model'] = {'mg90s': 'MG90S', 'sg90': 'SG90',
+                                           'mg996r': 'MG996R'}[kind]
     for side in ('internal', 'external'):
         sensor = str(hardware.get(f'dht_{side}_type', 'DHT22')).upper()
         if sensor not in ('DHT11', 'DHT22'):
@@ -240,7 +241,7 @@ def assemble(name: str) -> dict:
     return data
 
 
-def _portable(data: dict) -> None:
+def _portable(data: dict, require_assets: bool = True) -> None:
     vision = data['vision']
     for key in ('fire_model', 'person_model', 'firefighter_model'):
         raw = str(vision.get(key) or '')
@@ -253,13 +254,15 @@ def _portable(data: dict) -> None:
         local = PC / 'videos_input' / re.split(r'[/\\]', source)[-1]
         if local.is_file():
             vision['camera_source'] = f'videos_input/{local.name}'
-        elif not Path(source).is_file():
+        elif require_assets and not Path(source).is_file():
             raise FileNotFoundError(f'Vídeo da combinação indisponível: {source}')
         data.setdefault('camera', {})['source'] = vision['camera_source']
     vision['trajectory_export_dir'] = '../output/visao'
 
 
-def prepare(name: str, expected_profile: str | None = None) -> tuple[Path, dict]:
+def prepare(name: str, expected_profile: str | None = None, *,
+            require_assets: bool = True) -> tuple[Path, dict]:
+    """Prepara o perfil sem sondar componentes; arquivos só são exigidos na execução."""
     local_link_credentials(create=True)
     data = assemble(name)
     source = data.get('vision', {}).get('camera_source', data.get('camera', {}).get('source', 0))
@@ -279,10 +282,11 @@ def prepare(name: str, expected_profile: str | None = None) -> tuple[Path, dict]
     profile = data['_official']['profile']
     if expected_profile and expected_profile != profile:
         raise ValueError(f'{name} é {profile}; este programa aceita {expected_profile}.')
-    _portable(data)
-    for key in ('fire_model', 'person_model'):
-        if not (PC / data['vision'].get(key, '')).is_file():
-            raise FileNotFoundError(f'Modelo obrigatório indisponível: {key}')
+    _portable(data, require_assets=require_assets)
+    if require_assets:
+        for key in ('fire_model', 'person_model'):
+            if not (PC / data['vision'].get(key, '')).is_file():
+                raise FileNotFoundError(f'Modelo obrigatório indisponível: {key}')
     data['_official']['firmware_signature'] = _firmware_signature(data)[:16]
     RUNTIME_SETUPS.mkdir(parents=True, exist_ok=True)
     path = RUNTIME_SETUPS / f'{_safe(name)}.json'
@@ -356,6 +360,8 @@ def firmware_project(name: str) -> tuple[Path, dict]:
         f'#define BLAZE_FOCUS_DISPERSED_DEG {int(data["hardware"].get("focus_dispersed_deg", 175))}\n' +
         f'#define BLAZE_FOCUS_FOCUSED_DEG {int(data["hardware"].get("focus_focused_deg", 5))}\n' +
         ''.join(f'#define BLAZE_SERVO_{axis.upper()}_SG90 {int(data["hardware"][f"{axis}_servo_kind"] == "sg90")}\n'
+                for axis in ('pan', 'tilt', 'camera')) +
+        ''.join(f'#define BLAZE_SERVO_{axis.upper()}_MODEL {json.dumps(data["hardware"][f"{axis}_servo_model"])}\n'
                 for axis in ('pan', 'tilt', 'camera')) +
         ''.join(f'#define BLAZE_DHT_{side.upper()}_TYPE {11 if data["hardware"][f"dht_{side}_type"] == "DHT11" else 22}\n'
                 for side in ('internal', 'external')),

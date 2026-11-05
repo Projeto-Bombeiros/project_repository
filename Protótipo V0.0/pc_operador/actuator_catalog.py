@@ -16,6 +16,8 @@ SOURCES = {
     "drv8833": "https://www.ti.com/lit/ds/symlink/drv8833.pdf",
     "l298n": "https://www.st.com/resource/en/datasheet/l298.pdf",
     "mg996r": "https://towerpro.com.tw/product/mg996R/",
+    "mg90s": "https://towerpro.com.tw/product/mg90s-3/",
+    "sg90": "https://towerpro.com.tw/product/sg90-analog/",
 }
 
 # Uma placa de interface é distinta dos drivers de potência Kalatec. O cadastro
@@ -66,6 +68,11 @@ BUILTINS = {
                     cannon_kind="mg996r", voltage_v=6, min_v=4.8, max_v=6.6,
                     peak_a=1.4, control="PWM 50 Hz, alimentação independente",
                     source=SOURCES["mg996r"], notes="Servo RC PWM selecionável independentemente para pan, tilt e câmera; confirme o curso real da variante."),
+    "mg90s": dict(role="servo", name="TowerPro MG90S", technology="rc_pwm",
+                    cannon_kind="mg996r", voltage_v=4.8, min_v=4.8, max_v=6.0,
+                    control="PWM 50 Hz, alimentação externa",
+                    source=SOURCES["mg90s"],
+                    notes="Servo compacto de engrenagens metálicas; selecione pan, tilt ou câmera independentemente. Verifique torque sob a carga real."),
     "ht23_ec1000": dict(role="servo", name="Kalatec HT23-EC1000-K", technology="stepservo",
                         cannon_kind="ht23_ec1000", voltage_v=None, min_v=None, max_v=None,
                         nominal_a=3, torque_nm=2, control="pulso/direção + encoder DB9",
@@ -216,7 +223,7 @@ def validate_pair(motor: dict, driver: dict, physical=False) -> tuple[list[str],
         if driver.get("backend") in ("planned_bldc", "planned_stepservo") or driver.get("backend") not in (
                 "bts_pwm", "drv8833_dual", "l298n_dual", "rc_pwm"):
             errors.append("Este backend ainda não comanda saídas físicas neste firmware.")
-        if motor["technology"] == "rc_pwm" and motor.get("name") not in ("TowerPro MG996R", "SG90"):
+        if motor["technology"] == "rc_pwm" and motor.get("name") not in ("TowerPro MG996R", "TowerPro MG90S", "SG90"):
             errors.append("Servo PWM cadastrado sem calibração de pulsos e limites no firmware.")
         if motor["technology"] == "brushed_dc" and motor.get("drive_kind") not in ("dc_3_6v", "bts7960_12v"):
             errors.append("Motor DC cadastrado sem backend de pinagem homologado.")
@@ -226,7 +233,8 @@ def hardware_pairs(hardware: dict, physical=False) -> tuple[list[str], list[str]
     rows = catalog(include_hidden=True)
     legacy_motors = {"dc_3_6v": "dc_3_6v", "bts7960_12v": "mabuchi_12v",
                      "bldc_ktc86": "ktc_86bls125_j"}
-    legacy_servos = {"mg996r": "mg996r", "ht23_ec1000": "ht23_ec1000"}
+    legacy_servos = {"mg996r": "mg996r", "mg90s": "mg90s", "sg90": "sg90",
+                     "ht23_ec1000": "ht23_ec1000"}
     def by_model(model, role):
         return next((key for key, row in rows.items()
                      if row["role"] == role and row["name"].casefold() == str(model).casefold()), None)
@@ -267,5 +275,6 @@ INTERFACE_BOARDS = {'none': INTERFACE_BOARDS['none']}
 BUILTINS['mg996r_pwm']['channels'] = 3
 BUILTINS['mg996r_pwm']['pins'] = 'GPIO18 pan, GPIO19 tilt, GPIO4 plataforma; fonte separada dimensionada para três servos.'
 BUILTINS['sg90'] = dict(role='servo', name='SG90', technology='rc_pwm',
-                        voltage_v=5, min_v=4.8, max_v=6, control='PWM 50 Hz',
-                        cannon_kind='mg996r', notes='Servo RC PWM para pan, tilt, câmera ou foco; alimentação externa e GND comum.')
+                        voltage_v=4.8, min_v=4.8, max_v=6, control='PWM 50 Hz',
+                        cannon_kind='mg996r', source=SOURCES['sg90'],
+                        notes='Servo RC PWM para pan, tilt, câmera ou foco; engrenagens plásticas, alimentação externa e GND comum. Confirme o torque para a carga real.')

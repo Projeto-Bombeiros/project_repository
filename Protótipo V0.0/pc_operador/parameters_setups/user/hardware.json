@@ -1,5 +1,5 @@
 {
-  "ESP-DC3-6V_l298n_P-mg996r_T-mg996r_C-sg90_F-SG90_Fisico_Jato_5723d7": {
+  "ESP-DC3-6V_l298n_P-mg90s_T-mg90s_C-sg90_F-SG90_Fisico_Jato_6675e8": {
     "esp": {
       "transport": "wifi_local",
       "serial_port": "auto",
@@ -10,10 +10,10 @@
       "drive_motor_id": "dc_3_6v",
       "drive_driver_id": "l298n",
       "cannon_kind": "mg996r",
-      "cannon_motor_id": "mg996r",
+      "cannon_motor_id": "mg90s",
       "cannon_driver_id": "mg996r_pwm",
-      "pan_servo_kind": "mg996r",
-      "tilt_servo_kind": "mg996r",
+      "pan_servo_kind": "mg90s",
+      "tilt_servo_kind": "mg90s",
       "camera_servo_kind": "sg90",
       "focus_actuator_model": "SG90",
       "dht_internal_type": "DHT22",
@@ -28,7 +28,7 @@
       "upload_port": "auto"
     },
     "_meta": {
-      "saved_at": "2026-10-23T14:35:47.403735-03:00"
+      "saved_at": "2026-11-05T11:09:54.057102-03:00"
     }
   }
 }

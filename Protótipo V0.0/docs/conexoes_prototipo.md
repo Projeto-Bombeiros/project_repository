@@ -8,9 +8,9 @@ O quadro interativo da seção 8 do notebook mostra os modelos da combinação o
 | BTS7960 direito | GPIO32 RPWM, GPIO33 LPWM, GPIO23 R_EN e L_EN | Mesmos terminais, segundo módulo | Fonte externa, GND comum ao ESP32 |
 | DRV8833 (alternativa: ponte dupla) | GPIO25/26 → AIN1/AIN2; GPIO32/33 → BIN1/BIN2 | AOUT1/AOUT2 → motor esquerdo; BOUT1/BOUT2 → motor direito; nSLEEP em nível alto | VM 2,7–10,8 V; GND comum. GPIO27/23 não usados |
 | L298N (alternativa: ponte dupla) | GPIO25/26 → IN1/IN2; GPIO27 PWM → ENA; GPIO32/33 → IN3/IN4; GPIO23 PWM → ENB | OUT1/OUT2 → esquerdo; OUT3/OUT4 → direito; retire jumpers ENA/ENB | VSS lógica 5 V separada, Vs fonte do motor, GND comum. Com Vs 6 V não dependa do regulador 5 V da placa |
-| MG996R ou SG90 pan | GPIO18 | Sinal PWM 50 Hz | Fonte externa conforme modelo, GND comum |
-| MG996R ou SG90 tilt | GPIO19 | Sinal PWM 50 Hz | Fonte externa conforme modelo, GND comum |
-| MG996R ou SG90 plataforma da câmera | GPIO4 | Sinal PWM 50 Hz | Fonte externa conforme modelo, GND comum |
+| MG90S ou SG90 pan (MG996R legado) | GPIO18 | Sinal PWM 50 Hz | Fonte externa conforme modelo, GND comum |
+| MG90S ou SG90 tilt (MG996R legado) | GPIO19 | Sinal PWM 50 Hz | Fonte externa conforme modelo, GND comum |
+| MG90S ou SG90 plataforma da câmera (MG996R legado) | GPIO4 | Sinal PWM 50 Hz | Fonte externa conforme modelo, GND comum |
 | Sensor de posição pan opcional | GPIO34 ADC1 | Saída analógica 0–3,3 V; resistor 100 kΩ externo para GND | GND comum; não ligar 5 V ao ESP32 |
 | Sensor de posição tilt opcional | GPIO35 ADC1 | Saída analógica 0–3,3 V; resistor 100 kΩ externo para GND | GND comum; não ligar 5 V ao ESP32 |
 | Sensor de posição plataforma opcional | GPIO36 ADC1 | Saída analógica 0–3,3 V; resistor 100 kΩ externo para GND | GND comum; não ligar 5 V ao ESP32 |
@@ -26,6 +26,8 @@ O foco usa um microservo SG90, com extremos de fábrica do setup em 5° focaliza
 
 O driver selecionado no setup oficial determina onde o firmware aplica PWM. Para BTS7960 são dois módulos; para DRV8833 ou L298N basta um módulo de dois canais. DRV8833 não suporta motor de 12 V. O L298N apresenta grande queda interna de tensão, reduzindo a velocidade de motores 3–6 V. Confira a corrente de partida da peça real e capacidade térmica por canal antes de aplicar potência.
 
-MG996R e SG90 convencionais de três fios não devolvem sua posição ao ESP32. Para exibir a mira azul, adicione três sensores externos de ângulo ou servos com saída de feedback, calibre as leituras A/B e registre os 12 pontos da câmera. Não conecte diretamente ao ADC de 3,3 V um potenciômetro alimentado a 5–6 V.
+MG90S, SG90 e MG996R convencionais de três fios não devolvem sua posição ao ESP32. Para exibir a mira azul, adicione três sensores externos de ângulo ou servos com saída de feedback, calibre as leituras A/B e registre os 12 pontos da câmera. Não conecte diretamente ao ADC de 3,3 V um potenciômetro alimentado a 5–6 V.
 
-Se MG996R e SG90 partilharem a mesma alimentação, ajuste a fonte externa para a faixa comum indicada pelos fabricantes (4,8–6,0 V) e dimensione a corrente para todos os servos. O pino do ESP32 fornece apenas sinal.
+Se MG90S e SG90 partilharem a mesma alimentação, ajuste a fonte externa para a faixa comum indicada pelos fabricantes (4,8–6,0 V) e dimensione a corrente para todos os servos. O pino do ESP32 fornece apenas sinal. O SG90 usa engrenagens plásticas e pode não sustentar a carga mecânica do canhão; confirme torque e curso físico da variante escolhida.
+
+Referências dos modelos: [TowerPro MG90S](https://towerpro.com.tw/product/mg90s-3/) e [TowerPro SG90](https://towerpro.com.tw/product/sg90-analog/). A escala de 0–180° no controle é lógica; uma variante convencional pode ter curso físico menor. Ajuste os limites de pan e tilt na calibração antes de usar os extremos.

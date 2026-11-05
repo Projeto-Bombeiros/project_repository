@@ -1,5 +1,5 @@
 {
-  "Xbox-0_60RPM_Camera-20graus_c27cb6": {
+  "Xbox-0_56RPM_Camera-20graus_daa398": {
     "xbox_axes": {
       "drive_x": 0,
       "drive_y": 1,
@@ -116,7 +116,7 @@
           "index": 6
         }
       },
-      "speed_limit_rpm": 60,
+      "speed_limit_rpm": 56,
       "button_names": {
         "lt": "LT",
         "drive_x": "Stick E X",
@@ -140,7 +140,7 @@
       }
     },
     "_meta": {
-      "saved_at": "2026-10-23T14:35:28.464717-03:00"
+      "saved_at": "2026-11-05T11:09:06.482206-03:00"
     }
   }
 }

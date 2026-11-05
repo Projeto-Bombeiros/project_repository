@@ -413,7 +413,7 @@ void CannonJet::servo(int pin, unsigned channel, float angle) {
   if (std::isfinite(last_servo_angle_[index]) &&
       (now - last_servo_write_ms_[index] < 20 ||
        std::fabs(angle - last_servo_angle_[index]) < .55f)) return;
-  // LEDC 50 Hz/16 bits; faixa estendida para SG90 e MG996R.
+  // LEDC 50 Hz/16 bits; MG90S, SG90 e MG996R usam os mesmos canais RC PWM.
   // Um comando logico de 180 graus nao garante curso fisico de 180 graus.
   const float pulse_min_us = 500.f;
   const float pulse_max_us = 2500.f;

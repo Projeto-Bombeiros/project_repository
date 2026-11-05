@@ -16,9 +16,9 @@
     "drive_driver_id": "bts7960",
     "drive_driver_model": "BTS7960",
     "cannon_kind": "mg996r",
-    "cannon_motor_id": "mg996r",
+    "cannon_motor_id": "mg90s",
     "cannon_driver_id": "mg996r_pwm",
-    "cannon_driver_model": "MG996R-PWM",
+    "cannon_driver_model": "PWM RC 50 Hz",
     "gear_ratio": 1.0,
     "ensaios": {
       "upload": false,
@@ -34,10 +34,10 @@
     "focus_dispersed_deg": 175,
     "focus_focused_deg": 5,
     "interface_board_id": "none",
-    "pan_servo_kind": "mg996r",
-    "tilt_servo_kind": "mg996r",
-    "pan_servo_model": "MG996R",
-    "tilt_servo_model": "MG996R",
+    "pan_servo_kind": "mg90s",
+    "tilt_servo_kind": "mg90s",
+    "pan_servo_model": "MG90S",
+    "tilt_servo_model": "MG90S",
     "dht_internal_type": "DHT22",
     "dht_external_type": "DHT22"
   }

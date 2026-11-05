@@ -6,7 +6,7 @@ Ao atualizar uma instalação existente, mantenha a pasta `pc_operador/parameter
 
 ## Arquitetura
 
-Dois motores DC com um driver de ponte H selecionado por esteira; três servos RC independentes MG996R ou SG90 (pan, tilt e câmera); um microservo SG90 para focalização/dispersão do jato.
+Dois motores DC com um driver de ponte H selecionado por esteira; pan, tilt e plataforma da câmera com seleção independente entre MG90S e SG90 (MG996R permanece disponível para setups anteriores); um microservo SG90 para focalização/dispersão do jato. O padrão de pan e tilt é MG90S; a plataforma usa SG90.
 
 O mapa e os limites estão em [`docs/conexoes_prototipo.md`](docs/conexoes_prototipo.md). Os perfis de motor/servo da outra geração são rejeitados pelo gerador de combinação oficial. Para começar, salve as configurações com nomes automáticos, gere uma combinação oficial e prepare os runtimes. Componentes podem ser cadastrados antes da montagem. No perfil de simulação o firmware mantém as saídas físicas desligadas, ainda que o cadastro preveja componentes reais; para gravar o ESP32, escolha uma COM detectada e use cabo USB. Os lançadores `BLAZE_Simulacao.cmd` e `BLAZE_Combate_Real.cmd` consomem a combinação oficial preparada. O runtime mantém o controle manual por Xbox e ESP32 mesmo sem câmera ou vídeo; o painel mostra a ausência da imagem. A detecção de pessoas e o combate autônomo exigem vídeo e modelos válidos.
 
@@ -26,7 +26,7 @@ Ao abrir a central, a comunicação está fechada. Start por 2 s inicia ou encer
 
 **Operação sem vídeo:** no perfil de combate real, a câmera indisponível não bloqueia esteiras, servos e demais comandos manuais. Segure Start por 2 s com os joysticks neutros, aguarde conexão e rearme. Se o vídeo desaparecer durante a autonomia, a central volta ao modo manual; o operador precisa escolher novamente o modo autônomo após a imagem retornar. O sistema não consegue detectar pessoas sem vídeo: observe diretamente a área antes de acionar água ou mover o robô. A velocidade das esteiras ainda exige `geometry.output_max_rpm` configurado no setup. A calibração da mira e o combate autônomo continuam exigindo uma câmera funcional. Após atualizar este pacote, prepare a combinação oficial, compile e grave o firmware: o firmware antigo ainda bloqueia o modo manual quando `vision_valid` é falso.
 
-O firmware fornece PWM dos motores DC, pan, tilt e plataforma configuráveis MG996R/SG90 e foco SG90. Os quatro canais RC recebem 50 Hz, 16 bits, com 500–2500 µs para 0–180° lógicos. A calibração mostra os pulsos comandados; o curso físico depende da versão do servo, da montagem e da fonte externa. O foco inicia em 5° focalizado e 175° disperso, editáveis entre 0° e 180°. **Recompile e grave** o firmware para aplicar esta faixa. A alimentação dos servos é externa, com GND comum.
+O firmware fornece PWM dos motores DC, pan, tilt e plataforma configuráveis MG90S/SG90 (também MG996R legado) e foco SG90. Os quatro canais RC recebem 50 Hz, 16 bits, com 500–2500 µs para 0–180° lógicos. A calibração mostra os pulsos comandados; o curso físico depende da variante do servo, da montagem e da fonte externa. A seleção de SG90 não aumenta o torque disponível para sustentar o canhão: confira a carga real antes da montagem. O foco inicia em 5° focalizado e 175° disperso, editáveis entre 0° e 180°. **Recompile e grave** o firmware após escolher os modelos e os limites. A alimentação dos servos é externa, com GND comum.
 
 Combinações antigas continuam arquivadas com os valores que tinham. Para adotar a plataforma SG90, os novos extremos e a interpretação dos DHT, salve o setup de hardware e a combinação oficial novamente, prepare o runtime e regrave o firmware correspondente. Os módulos físicos são DHT11; os bytes capturados no GPIO16 exigiram decodificação DHT22. O GPIO17 usará o mesmo formato por padrão até uma medição própria.
 
@@ -63,3 +63,10 @@ No modo manual, a plataforma só recebe o passo de 20° na borda quando o stick 
 ## Publicação pelo notebook
 
 A seção 10 publica a partir do próprio pacote ZIP, mesmo sem diretório `.git`: **Conferir envio** mostra os arquivos antigos que serão removidos e os novos caminhos em `Protótipo V0.0/`; **Enviar revisão** cria um commit normal e faz o envio. É preciso ter Git for Windows e autenticação com permissão de escrita. Para comparar, baixar, criar pasta, mover ou excluir arquivos em uma janela própria, dê dois cliques em `Abrir_Gerenciador_GitHub.cmd`. Veja [o guia](docs/gerenciar_github.md). Credenciais, firmware compilado e vídeos pessoais não entram na cópia publicada.
+# Configuração antes da montagem
+
+O notebook pode salvar uma combinação física e defini-la como oficial sem ESP32,
+servos, motores ou câmera conectados. A montagem e a comunicação são verificadas
+nos ensaios e na execução. A porta USB é escolhida na gravação do firmware ou na
+janela inicial do runtime; a troca de GPIO exige gerar e gravar outro firmware.
+

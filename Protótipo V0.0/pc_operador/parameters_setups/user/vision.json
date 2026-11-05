@@ -1,5 +1,5 @@
 {
-  "Visao-real_CameraUSB-0_F-fire-yolo-best_P-yolo11n_c5c81f": {
+  "Visao-real_CameraUSB-0_F-fire-yolo-best_P-yolo11n_1256ee": {
     "vision": {
       "fire_model": "models/fire_yolo_best.pt",
       "person_model": "models/yolo11n.pt",
@@ -11,7 +11,7 @@
       "combat_mode": "real",
       "camera_source": 0,
       "source_type": "local",
-      "input_fps": 10,
+      "input_fps": 20,
       "model_strategy": {
         "fire": "existing",
         "person": "existing",
@@ -21,7 +21,7 @@
       "params_override": {
         "fire_conf": 0.3,
         "person_conf": 0.7,
-        "firefighter_conf": 0.6000000000000001,
+        "firefighter_conf": 0.7,
         "imgsz_infer": 640,
         "detect_every_n_frames": 15,
         "merge_iou": 0.45,
@@ -30,9 +30,9 @@
         "jet_drop_px": 90,
         "erase_radius_px": 80,
         "restore_seconds": 20.0,
-        "human_safety_radius_px": 100,
+        "human_safety_radius_px": 90,
         "person_memory_seconds": 2.0,
-        "input_fps": 10
+        "input_fps": 20
       },
       "calibration_override": {
         "enabled": false
@@ -41,7 +41,7 @@
       "trajectory_export_dir": "../output/visao"
     },
     "_meta": {
-      "saved_at": "2026-10-23T14:35:08.001205-03:00"
+      "saved_at": "2026-11-05T11:08:36.110027-03:00"
     }
   }
 }

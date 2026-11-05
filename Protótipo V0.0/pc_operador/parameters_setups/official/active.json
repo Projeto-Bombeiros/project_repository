@@ -27,7 +27,7 @@
     "combat_mode": "real",
     "camera_source": 0,
     "source_type": "local",
-    "input_fps": 10,
+    "input_fps": 20,
     "model_strategy": {
       "fire": "existing",
       "person": "existing",
@@ -37,7 +37,7 @@
     "params_override": {
       "fire_conf": 0.3,
       "person_conf": 0.7,
-      "firefighter_conf": 0.6000000000000001,
+      "firefighter_conf": 0.7,
       "imgsz_infer": 640,
       "detect_every_n_frames": 15,
       "merge_iou": 0.45,
@@ -46,9 +46,9 @@
       "jet_drop_px": 90,
       "erase_radius_px": 80,
       "restore_seconds": 20.0,
-      "human_safety_radius_px": 100,
+      "human_safety_radius_px": 90,
       "person_memory_seconds": 2.0,
-      "input_fps": 10
+      "input_fps": 20
     },
     "calibration_override": {
       "enabled": false
@@ -73,7 +73,7 @@
     "leds": 3
   },
   "geometry": {
-    "track_width_m": 0.14,
+    "track_width_m": 0.12,
     "sprocket_radius_m": 0.03,
     "output_max_rpm": 60.0
   },
@@ -177,7 +177,7 @@
         "index": 6
       }
     },
-    "speed_limit_rpm": 60,
+    "speed_limit_rpm": 56,
     "button_names": {
       "lt": "LT",
       "drive_x": "Stick E X",
@@ -205,10 +205,10 @@
     "drive_motor_id": "dc_3_6v",
     "drive_driver_id": "l298n",
     "cannon_kind": "mg996r",
-    "cannon_motor_id": "mg996r",
+    "cannon_motor_id": "mg90s",
     "cannon_driver_id": "mg996r_pwm",
-    "pan_servo_kind": "mg996r",
-    "tilt_servo_kind": "mg996r",
+    "pan_servo_kind": "mg90s",
+    "tilt_servo_kind": "mg90s",
     "camera_servo_kind": "sg90",
     "focus_actuator_model": "SG90",
     "dht_internal_type": "DHT22",
@@ -221,13 +221,13 @@
     "physical_outputs": true,
     "jet_output_enabled": true,
     "upload_port": "auto",
-    "pan_servo_model": "MG996R",
-    "tilt_servo_model": "MG996R",
+    "pan_servo_model": "MG90S",
+    "tilt_servo_model": "MG90S",
     "camera_servo_model": "SG90",
     "camera_driver_model": "PWM RC 50 Hz (sinal; alimentação externa)",
     "drive_motor_model": "Motor DC 3–6 V",
     "drive_driver_model": "L298N · ponte H dupla",
-    "cannon_motor_model": "TowerPro MG996R",
+    "cannon_motor_model": "TowerPro MG90S",
     "cannon_driver_model": "PWM RC 50 Hz"
   },
   "_actuator_notes": [
@@ -236,21 +236,21 @@
     "Esteiras: Corrente do motor não cadastrada: antes da montagem, confirme corrente nominal e de partida dentro da capacidade por canal."
   ],
   "_official": {
-    "name": "ESP-wifi-local_Tr0.14m_R0.03m_2c9b4a*Visao-real_CameraUSB-0_F-fire-yolo-best_P-yolo11n_c5c81f*Xbox-0_60RPM_Camera-20graus_c27cb6*ESP-DC3-6V_l298n_P-mg996r_T-mg996r_C-sg90_F-SG90_Fisico_Jato_5723d7",
+    "name": "ESP-wifi-local_Tr0.12m_R0.03m_0c6c8f*Visao-real_CameraUSB-0_F-fire-yolo-best_P-yolo11n_1256ee*Xbox-0_56RPM_Camera-20graus_daa398*ESP-DC3-6V_l298n_P-mg90s_T-mg90s_C-sg90_F-SG90_Fisico_Jato_6675e8",
     "sections": {
-      "connection": "ESP-wifi-local_Tr0.14m_R0.03m_2c9b4a",
-      "vision": "Visao-real_CameraUSB-0_F-fire-yolo-best_P-yolo11n_c5c81f",
-      "control": "Xbox-0_60RPM_Camera-20graus_c27cb6",
-      "hardware": "ESP-DC3-6V_l298n_P-mg996r_T-mg996r_C-sg90_F-SG90_Fisico_Jato_5723d7"
+      "connection": "ESP-wifi-local_Tr0.12m_R0.03m_0c6c8f",
+      "vision": "Visao-real_CameraUSB-0_F-fire-yolo-best_P-yolo11n_1256ee",
+      "control": "Xbox-0_56RPM_Camera-20graus_daa398",
+      "hardware": "ESP-DC3-6V_l298n_P-mg90s_T-mg90s_C-sg90_F-SG90_Fisico_Jato_6675e8"
     },
     "profile": "combate_real",
     "physical_outputs_requested": true,
     "jet_output_requested": true,
     "outputs_deferred": false,
-    "saved_at": "2026-10-23T14:36:01.127819-03:00",
+    "saved_at": "2026-11-05T11:10:09.695966-03:00",
     "actuator_backend": "dc_3_6v/mg996r",
-    "prepared_at": "2026-10-23T17:36:02.546814+00:00",
-    "firmware_signature": "9f5e43be2efd350c",
-    "activated_at": "2026-10-23T17:36:02.559813+00:00"
+    "prepared_at": "2026-11-05T14:10:10.747912+00:00",
+    "firmware_signature": "92c836e1c498441e",
+    "activated_at": "2026-11-05T14:10:10.747912+00:00"
   }
 }
