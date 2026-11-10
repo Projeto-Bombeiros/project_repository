@@ -22,7 +22,7 @@ A primeira janela mantém **Abrir central**, **Calibrar câmera e canhão**, **C
 
 O firmware envia retorno curto aproximadamente a cada 50 ms e telemetria completa a cada 1000 ms. Cada linha JSON sai em uma só escrita TCP, evitando centenas de transmissões pequenas por resposta Wi-Fi. O PC envia comandos a cada 50 ms e neutraliza a atuação após 250 ms sem telemetria. Uma pausa prolongada provoca reconexão; no ESP32, a perda de comandos desarma as saídas em até 750 ms. A taxa de leitura dos sensores DHT não é de 50 ms. **Prepare, compile e grave novamente o firmware** após esta atualização; compare a assinatura exibida no primeiro painel. A versão anterior usa outra taxa serial e não atenderá a esta configuração USB.
 
-Ao abrir a central, a comunicação está fechada. Start por 2 s inicia ou encerra o meio escolhido, com os joysticks neutros; seta para baixo por 1 s solicita parada ou rearme sem trocar de transporte. Na primeira janela, escolha uma câmera USB de índice 0 a 5 apenas para esta execução. A escolha vale no diagnóstico, na central e na calibração e é mantida ao usar F5.
+Ao abrir a central, a comunicação está fechada. Start por 2 s inicia ou encerra o meio escolhido, com os joysticks neutros; seta para baixo por 0,25 a menos de 1 s alterna parada e rearme manual sem trocar de transporte. Segurar de 1 a menos de 3 s escolhe rearme automático após a saída de pessoas; 3 s ou mais desativa o bloqueio por pessoa. Na primeira janela, escolha uma câmera USB de índice 0 a 5 apenas para esta execução. A escolha vale no diagnóstico, na central e na calibração e é mantida ao usar F5.
 
 **Operação sem vídeo:** no perfil de combate real, a câmera indisponível não bloqueia esteiras, servos e demais comandos manuais. Segure Start por 2 s com os joysticks neutros, aguarde conexão e rearme. Se o vídeo desaparecer durante a autonomia, a central volta ao modo manual; o operador precisa escolher novamente o modo autônomo após a imagem retornar. O sistema não consegue detectar pessoas sem vídeo: observe diretamente a área antes de acionar água ou mover o robô. A velocidade das esteiras ainda exige `geometry.output_max_rpm` configurado no setup. A calibração da mira e o combate autônomo continuam exigindo uma câmera funcional. Após atualizar este pacote, prepare a combinação oficial, compile e grave o firmware: o firmware antigo ainda bloqueia o modo manual quando `vision_valid` é falso.
 
@@ -37,7 +37,7 @@ Se o Wi-Fi oscilar, observe na primeira janela SSID atual, contagem de pacotes c
 
 ## Revisão USB, visor e pontes H duplas
 
-Esta revisão opera USB a 460800 baud. Prepare o runtime e compile/grave por cabo o firmware da combinação oficial; a central exige protocolo versão 4 para evitar interpretar firmware antigo como se tivesse feedback. A mira azul indica os três eixos medidos e projetados pelo mapa de 12 pontos, não o ponto real de impacto hidráulico.
+Esta revisão opera USB a 460800 baud. Prepare o runtime e compile/grave por cabo o firmware da combinação oficial; a central exige protocolo versão 5 para evitar interpretar firmware antigo como se tivesse feedback. A mira azul indica os três eixos medidos e projetados pelo mapa de 12 pontos, não o ponto real de impacto hidráulico.
 
 
 No hardware, a seleção BTS7960, DRV8833 ou L298N determina o PWM e as ligações. O feedback externo dos servos é opcional e salvo por combinação completa. A tela repinta estados e leituras ambientais a cada 1 s; cada DHT é amostrado uma vez a cada 3 s. A biblioteca DHT sensor library for ESPx 1.19.0 lê temperatura e umidade juntas; a seção 8 apresenta a leitura e o código de erro sem declarar a medição exata só porque houve resposta. A biblioteca ESPx é distribuída separadamente sob GPL-3.0-only. Servos RC de três fios apenas recebem comandos: linha azul no primeiro painel significa saída habilitada, não movimento comprovado.
@@ -56,17 +56,49 @@ Start e seta para baixo usam a própria linha de comunicação e a de armado par
 
 ## Controle após a montagem física
 
-A mistura diferencial usa curva progressiva no stick esquerdo: `giro = 0,45 × X × |X|`. Um pequeno deslocamento lateral muda pouco a velocidade das esteiras; a simulação do notebook usa a mesma curva. Pan, tilt e plataforma recebem alvos com tolerância de 0,35°, velocidade limitada a 65°/s e aceleração limitada a 220°/s². O PWM permanece ativo para manter o torque e só recebe atualização quando há deslocamento suficiente, em intervalos de pelo menos 20 ms. O stick direito tem zona neutra de 0,14 para filtrar ruído central.
+A mistura diferencial usa curva progressiva no stick esquerdo: `giro = 0,45 × (sensibilidade / 100) × X × |X|`, com sensibilidade inicial de 50%. Um pequeno deslocamento lateral muda pouco a velocidade das esteiras; a simulação do notebook usa a mesma curva. Pan, tilt e plataforma recebem alvos com tolerância de 0,35°, velocidade limitada a 65°/s e aceleração limitada a 220°/s². O PWM permanece ativo para manter o torque e só recebe atualização quando há deslocamento suficiente, em intervalos de pelo menos 20 ms. O stick direito tem zona neutra de 0,14 para filtrar ruído central.
 
 No modo manual, a plataforma só recebe o passo de 20° na borda quando o stick direito é mantido naquela direção por 150 ms; um novo passo aguarda a conclusão do anterior. Isso corrige giros súbitos que aconteciam com a mira parada na borda. A atualização do firmware acima suaviza os comandos, mas não constitui um PID de posição física: os servos RC desta montagem não devolvem sua posição ao ESP32. A telemetria informa o último ângulo enviado ao PWM. Se um servo ainda oscilar em uma posição com joystick neutro e telemetria estável, confira a tensão da fonte externa sob carga, o GND comum e o esforço mecânico naquela posição. Recompile e grave o firmware da combinação oficial para aplicar a revisão.
 
 ## Publicação pelo notebook
 
-A seção 10 publica a partir do próprio pacote ZIP, mesmo sem diretório `.git`: **Conferir envio** mostra os arquivos antigos que serão removidos e os novos caminhos em `Protótipo V0.0/`; **Enviar revisão** cria um commit normal e faz o envio. É preciso ter Git for Windows e autenticação com permissão de escrita. Para comparar, baixar, criar pasta, mover ou excluir arquivos em uma janela própria, dê dois cliques em `Abrir_Gerenciador_GitHub.cmd`. Veja [o guia](docs/gerenciar_github.md). Credenciais, firmware compilado e vídeos pessoais não entram na cópia publicada.
+A seção 10 publica a partir do próprio pacote ZIP, mesmo sem diretório `.git`: **Conferir envio** mostra os arquivos antigos que serão removidos e os novos caminhos em `Prototipo v0.2/`; **Enviar revisão** cria um commit normal e faz o envio. É preciso ter Git for Windows e autenticação com permissão de escrita. Para comparar, baixar, criar pasta, mover, renomear uma pasta raiz ou excluir arquivos em uma janela própria, dê dois cliques em `Abrir_Gerenciador_GitHub.cmd`. Veja [o guia](docs/gerenciar_github.md). Credenciais, firmware compilado e vídeos pessoais não entram na cópia publicada.
 # Configuração antes da montagem
 
 O notebook pode salvar uma combinação física e defini-la como oficial sem ESP32,
 servos, motores ou câmera conectados. A montagem e a comunicação são verificadas
 nos ensaios e na execução. A porta USB é escolhida na gravação do firmware ou na
 janela inicial do runtime; a troca de GPIO exige gerar e gravar outro firmware.
+
+# Revisões de controle
+
+Na primeira janela, o teto das esteiras é ajustado de 0 a 100% do comando PWM.
+Na seção de controle do notebook, a sensibilidade de curva começa em 50% do
+ganho anterior e é registrada no setup. Esta versão do runtime requer o firmware
+com protocolo 5; depois de gravá-lo, o ajuste de sensibilidade e a seleção da
+política de pessoas são transmitidos nos comandos, sem nova gravação. O radar na central mostra os 180° da plataforma, o campo da
+câmera estimado pela calibração de 12 pontos (90° antes dela), o pan comandado
+e a barra do tilt; servos RC sem sensores externos não fornecem posição real.
+
+Na central, a seta para baixo interrompe as saídas após 0,25 s pressionada. Solte
+após 0,25–1 s para alternar parada/rearme manual; 1–3 s escolhe rearme 1 s
+após a pessoa deixar a imagem; após 3 s desativa o bloqueio por pessoa.
+O modo 2 também libera a detecção de pessoa enquanto ela aparece; confira
+o modo antes de comandar o jato. Uma parada solicitada pelo operador exige
+rearme manual.
+
+## Radar compacto e operação sem vídeo
+
+O radar no canto inferior esquerdo da central não possui painel de fundo. O
+arco e a barra de tilt têm metade do tamanho anterior e ficam lado a lado,
+próximos à margem esquerda. Com a câmera ausente ou com quadros antigos, a
+central exibe uma tela escura com aviso e continua atualizando radar e barra
+a partir da telemetria do ESP32; enquanto o retorno ainda não chega, usa o
+alvo manual comandado e o último ângulo recebido. A indicação é de ângulo
+comandado, não de posição medida por sensor externo.
+
+O controle manual dos motores, dos servos e da plataforma permanece disponível
+sem vídeo após conectar o Xbox e o ESP32, segurar Start e rearmar. A seleção
+automática de alvos e a detecção de pessoas dependem de vídeo recente; se o
+vídeo desaparecer durante a autonomia, a central retorna ao modo manual.
 

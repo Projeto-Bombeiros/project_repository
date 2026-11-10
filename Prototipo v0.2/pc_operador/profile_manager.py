@@ -174,8 +174,8 @@ def assemble(name: str) -> dict:
         physical = False
     if profile == 'combate_real' and not physical:
         raise ValueError(f'{name}: combate real exige hardware.physical_outputs=true.')
-    if not 10 <= float(data.get('control', {}).get('speed_limit_rpm', 0)) <= 80:
-        raise ValueError(f'{name}: limite das esteiras deve ficar entre 10 e 80 RPM.')
+    if not 0 <= float(data.get('control', {}).get('steering_sensitivity_percent', 50)) <= 100:
+        raise ValueError(f'{name}: sensibilidade de curva deve ficar entre 0 e 100%.')
     hardware = data.get('hardware', {})
     drive = hardware.get('drive_kind', 'bts7960_12v')
     cannon = hardware.get('cannon_kind', 'mg996r')

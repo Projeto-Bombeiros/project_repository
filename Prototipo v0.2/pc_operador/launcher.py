@@ -334,11 +334,22 @@ def open_camera_calibration(parent, config_path: Path, on_close,
         if not prerequisites():
             status.set('Calibração requer câmera real, firmware correspondente e três servos instalados.')
             return
+        if not runtime.camera_calibration_complete(
+                {'schema_version':5,'enabled':True,'angles':angles}):
+            status.set('Registre todos os 12 pontos antes de salvar a calibração.')
+            return
         try: limits=read_limits()
         except ValueError as exc:
             status.set(str(exc));return
+        # Ângulo efetivo aproximado pela separação horizontal dos pontos em 90°.
+        # O mapa já converte pixels em pan físico; o radar usa a abertura resultante.
+        mid=angles.get('90',{})
+        spans=[abs(float(mid[right][0])-float(mid[left][0]))
+               for left,right in (('tl','tr'),('bl','br'))]
+        estimated_fov=max(20.,min(180.,sum(spans)/len(spans)))
         entry={'schema_version':5,'enabled':True,'angles':angles,
                'angle_limits':limits,
+               'horizontal_fov_deg':round(estimated_fov,1),
                'frame_size':list(last_shape[0]),'recorded_at':time.strftime('%Y-%m-%dT%H:%M:%S')}
         if not runtime.camera_calibration_complete(entry):
             status.set('Faltam pontos: confirme os 12 alvos, inclusive os quatro centrais dos extremos.')
@@ -358,7 +369,7 @@ def open_camera_calibration(parent, config_path: Path, on_close,
         os.replace(temporary,store_path)
         profile_label.set(label)
         profile_options['values']=sorted(group['profiles'])
-        status.set(f'Calibração “{label}” salva e selecionada. Feche a janela e abra a central.')
+        status.set(f'Calibração “{label}” salva; campo horizontal estimado: {estimated_fov:.1f}°. Feche a janela e abra a central.')
 
     last_shape=[(0,0)]
     footer=tk.Frame(dialog,bg='#122033')
@@ -557,6 +568,16 @@ def run(profile: str) -> None:
     transport_options=ttk.Combobox(upper,textvariable=transport_override,state='readonly',width=20,
                                    values=('Conforme setup','USB','Wi-Fi local'))
     transport_options.pack(side='left',padx=6)
+    speed_percent=tk.IntVar(master=root,value=100)
+    speed_row=tk.Frame(panel,bg='#122033');speed_row.pack(fill='x',pady=3)
+    tk.Label(speed_row,text='Teto das esteiras nesta execução:',bg='#122033',fg='white').pack(side='left')
+    tk.Scale(speed_row,from_=0,to=100,resolution=1,orient='horizontal',length=310,
+             variable=speed_percent,showvalue=False,bg='#122033',fg='white',
+             highlightthickness=0,troughcolor='#31465a').pack(side='left',padx=8)
+    tk.Label(speed_row,textvariable=speed_percent,bg='#122033',fg='#a8dfc3',
+             font=('Segoe UI',11,'bold')).pack(side='left')
+    tk.Label(speed_row,text='% da velocidade máxima comandada (PWM); não altera os servos.',
+             bg='#122033',fg='#c3d8e8').pack(side='left',padx=4)
     local_network=tk.StringVar(master=root,value='Rede local: será gerada ao preparar o firmware.')
     local_guide=tk.LabelFrame(panel,text='Conexão local do ESP32 por Wi-Fi',bg='#1e3044',fg='white')
     local_guide.pack(fill='x',pady=4)
@@ -615,6 +636,7 @@ def run(profile: str) -> None:
         value=camera_choice.get()
         return int(value.split(' · ',1)[0][4:]) if value.startswith('USB ') else None
     def apply_transport(config):
+        config.data.setdefault('control',{})['speed_limit_percent']=int(speed_percent.get())
         override={'USB':'usb','Wi-Fi local':'wifi_local'}.get(transport_override.get())
         if override:
             config.data['esp']['transport']=override
@@ -897,7 +919,7 @@ def run(profile: str) -> None:
                 raise ValueError('Aguarde câmera ao vivo e telemetria recentes do ESP32.')
             if (packet.get('setup_signature')!=data['_official']['firmware_signature']
                     or not runtime.protocol_compatible(packet)):
-                raise ValueError('Firmware diferente ou anterior à versão 4: compile e grave novamente.')
+                raise ValueError('Firmware diferente ou anterior à versão 5: compile e grave novamente.')
             if not packet.get('servos_configured') or not packet.get('camera_servo_configured'):
                 raise ValueError('Aguarde telemetria completa que confirme os três canais dos servos; '
                                  'se persistir, confira se a saída física está habilitada.')

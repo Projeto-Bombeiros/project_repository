@@ -7,6 +7,8 @@ struct Command {
   bool valid = false;
   bool auto_mode = false;
   float drive_x = 0.0f, drive_y = 0.0f;
+  float steering_sensitivity_percent = 50.0f;
+  uint8_t person_policy = 0;  // 0 manual, 1 rearme após 1 s, 2 sem bloqueio por pessoa
   float cannon_x = 0.0f, cannon_y = 0.0f;
   float cannon_rate_deg_s = 90.0f;
   float camera_rate_deg_s = 90.0f, auto_rate_deg_s = 90.0f;

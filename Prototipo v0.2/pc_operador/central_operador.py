@@ -136,7 +136,7 @@ _R12_NAMES = {
     'mode': 'X', 'cool_internal': 'A', 'cool_external': 'B', 'leds': 'Y',
     'camera_left': 'Seta esquerda', 'camera_right': 'Seta direita',
     'overlay': 'Seta para cima',
-    'link_hold': 'Start 2 s', 'stop': 'Seta para baixo 1 s', 'water': 'View',
+    'link_hold': 'Start 2 s', 'stop': 'Seta para baixo (0,25 / 1 / 3 s)', 'water': 'View',
 }
 
 def _r12_decode(packet):
@@ -175,15 +175,16 @@ def _r12_new_control_state():
       'left_rpm':0.,'right_rpm':0.,'v_mps':0.,'omega':0.,
       'throttle':0.,'pressure':0.,'link_hold_since':None,'hold_latched':False,
       'stop_hold_since':None,'stop_latched':False,
+      'person_policy':0,'person_active':False,'person_clear_since':None,'person_latched':False,
       'previous':{},'hint':'Segure Start por 2 s para conectar o robô (simulado).'}
 
 def _r12_deadzone(value,threshold=.08):
     value=float(value)
     return 0. if abs(value)<threshold else max(-1.,min(1.,value))
 
-def _r12_steering(value):
+def _r12_steering(value, sensitivity_percent=50.):
     x=_r12_deadzone(value)
-    return .45*x*abs(x)
+    return .45*blaze_runtime.clamp(sensitivity_percent,0,100)/100.*x*abs(x)
 
 def _r12_apply_control(s, c, now, dt, rpm_limit, geometry, camera_settings=None):
     """Simula a máquina de estados; não envia sinais ao ESP32."""
@@ -192,15 +193,34 @@ def _r12_apply_control(s, c, now, dt, rpm_limit, geometry, camera_settings=None)
     prev=s['previous'];rising=lambda key: bool(c.get(key)) and not prev.get(key,False)
     if c.get('stop'):
         if s['stop_hold_since'] is None:s['stop_hold_since']=now
-        if not s['stop_latched'] and now-s['stop_hold_since']>=1.:
-            s.update(emergency=not s['emergency'],water=False,
-                     cool_internal=False,cool_external=False,throttle=0.,pressure=0.,
-                     left_rpm=0.,right_rpm=0.)
-            s['hint']=('PARADA DE EMERGÊNCIA: segure a seta para baixo 1 s para rearmar.'
-                       if s['emergency'] else 'Rearmado; comunicação mantida.')
-            s['stop_latched']=True
-    else:
-        s['stop_hold_since']=None;s['stop_latched']=False
+    elif s['stop_hold_since'] is not None:
+        duration=now-s['stop_hold_since'];s['stop_hold_since']=None
+        if duration>=3.:
+            s['person_policy']=2
+            s['person_latched']=False
+            s['hint']='Detecção de pessoa: bloqueio automático desativado.'
+        elif duration>=1.:
+            s['person_policy']=1
+            s['hint']='Pessoa: rearme automático 1 s após sair da imagem.'
+        elif duration>=.25:
+            s['person_policy']=0
+            if s['emergency'] or s['person_latched']:
+                neutral=(abs(float(c.get('drive_x',0)))<.08 and
+                         abs(float(c.get('drive_y',0)))<.08 and float(c.get('lt',0))<.08)
+                if neutral:s['emergency']=s['person_latched']=False
+                else:s['hint']='Centralize o joystick e solte LT para rearmar.'
+            else:
+                s['emergency']=True;s['hint']='Desarmado: solte e segure 0,25 s para rearmar.'
+        if s['emergency']:
+            s.update(water=False,throttle=0.,pressure=0.,left_rpm=0.,right_rpm=0.)
+    active=bool(s.get('person_active',False))
+    if active:
+        s['person_latched']=s['person_policy']!=2
+        s['person_clear_since']=None
+    elif s['person_latched']:
+        if s['person_clear_since'] is None:s['person_clear_since']=now
+        if s['person_policy'] in (1,2) and now-s['person_clear_since']>=1.:
+            s['person_latched']=False
     start=bool(c.get('link_hold'))
     if start:
         if s['link_hold_since'] is None:s['link_hold_since']=now
@@ -220,7 +240,8 @@ def _r12_apply_control(s, c, now, dt, rpm_limit, geometry, camera_settings=None)
                 s['hint']='Conectado (simulado). View libera água; LT acelera; LB freia.'
                 s['hold_latched']=True
     else:s['link_hold_since']=None;s['hold_latched']=False
-    if not s['connected'] or s['emergency']:
+    if (not s['connected'] or s['emergency'] or s['person_latched'] or
+            (active and s['person_policy']!=2) or c.get('stop')):
         s['throttle']=s['pressure']=s['v_mps']=s['omega']=0.
         s['left_rpm']=s['right_rpm']=0.
         if not s['emergency'] and not start and (float(c.get('lt',0))>.08 or
@@ -243,9 +264,11 @@ def _r12_apply_control(s, c, now, dt, rpm_limit, geometry, camera_settings=None)
             throttle=0.
         x=_r12_deadzone(c.get('drive_x',0));y=-_r12_deadzone(c.get('drive_y',0))
         s['throttle']=throttle
-        turn=_r12_steering(x)
-        left=throttle*max(-1.,min(1.,y+turn))
-        right=throttle*max(-1.,min(1.,y-turn))
+        cap=blaze_runtime.clamp(camera_settings.get('speed_limit_percent',100),0,100)/100.
+        turn=_r12_steering(x*throttle*cap,camera_settings.get('steering_sensitivity_percent',50))
+        forward=y*throttle*cap
+        left=max(-1.,min(1.,forward+turn))
+        right=max(-1.,min(1.,forward-turn))
         s['left_rpm']=rpm_limit*left;s['right_rpm']=rpm_limit*right
         pressure=max(0.,min(1.,float(c.get('rt',0))))
         s['pressure']=pressure if s['water'] else 0.
@@ -431,10 +454,10 @@ class CentralOperador(blaze_runtime.OperatorApp):
         tk.Label(header, text='BLAZE  ·  CENTRAL DO OPERADOR',
                  font=('Segoe UI', 17, 'bold'), bg=self.BG, fg=self.FG).pack(side='left')
         name = self.config.data.get('_official', {}).get('name', 'sem nome')
-        limit = self.config.data.get('control', {}).get('speed_limit_rpm', '—')
+        limit = self.config.data.get('control', {}).get('speed_limit_percent', 100)
         hw=self.config.data.get('hardware',{})
         backend=f"{hw.get('drive_kind','bts7960_12v')} / {hw.get('cannon_kind','mg996r')}"
-        tk.Label(header, text=f'Setup: {name[:72]}{"…" if len(name)>72 else ""}  ·  {backend}  ·  limite {limit} RPM',
+        tk.Label(header, text=f'Setup: {name[:72]}{"…" if len(name)>72 else ""}  ·  {backend}  ·  limite {limit}%',
                  font=('Segoe UI', 10), bg=self.BG, fg=self.MUTED).pack(side='left', padx=20)
         tk.Label(header, text='F5: recarregar parâmetros', bg=self.BG,
                  fg=self.MUTED, font=('Segoe UI', 9)).pack(side='right')
@@ -484,6 +507,13 @@ class CentralOperador(blaze_runtime.OperatorApp):
 
         self.state_values = {}
         sections = (
+          ('Comunicação e demais estados', (
+            ('esp', 'ESP32 (Start)'),
+            ('armed', 'Armado (seta ↓)'),
+            ('person_policy', 'Desarme por pessoa'),
+            ('link_latency', 'Pacotes / ida e volta'),
+            ('xbox', 'Controle Xbox'),
+          )),
           ('Acionamentos', (
             ('mode', 'Modo canhão (X)'), ('water', 'Água (View)'),
             ('throttle', 'Aceleração (LT)'), ('brake', 'Freio (LB)'),
@@ -508,12 +538,6 @@ class CentralOperador(blaze_runtime.OperatorApp):
             ('hum_ext', 'Umidade externa'),
             ('cool_int', 'Arref. interno (A/auto)'),
             ('cool_ext', 'Arref. externo (B/auto)'),
-          )),
-          ('Comunicação e demais estados', (
-            ('esp', 'ESP32 (Start)'),
-            ('armed', 'Armado (seta ↓)'),
-            ('link_latency', 'Pacotes / ida e volta'),
-            ('xbox', 'Controle Xbox'),
           )),
         )
         for heading, labels in sections:
@@ -665,6 +689,74 @@ class CentralOperador(blaze_runtime.OperatorApp):
                 cv2.putText(frame,label,(x-tw//2,h-5),cv2.FONT_HERSHEY_SIMPLEX,
                             .32,green,1,cv2.LINE_AA)
 
+    @staticmethod
+    def _camera_fov(calibration):
+        """Ângulo horizontal estimado dos quatro cantos medidos em câmera a 90°."""
+        try:
+            value=float(calibration.get('horizontal_fov_deg'))
+            if math.isfinite(value):return blaze_runtime.clamp(value,20,180)
+        except (TypeError,ValueError,AttributeError):pass
+        return 90.
+
+    @staticmethod
+    def _overlay_radar(frame, camera_pan, cannon_pan, cannon_tilt, fov,
+                       pan_limits=(0.,180.), tilt_limits=(0.,180.)):
+        """Radar e tilt sobre qualquer quadro, inclusive o painel sem câmera."""
+        h,w=frame.shape[:2]
+        # Metade do raio original; os elementos não têm caixa de fundo.
+        r=max(24,min(int(w*.0625),int(h*.12),59))
+        cx,cy=r+12,h-18
+        if cx+r+18>=w or cy-r-6<0:return
+        overlay=frame.copy()
+        def pt(deg,rad=r):
+            a=math.radians(blaze_runtime.clamp(deg,0,180))
+            return (round(cx-rad*math.cos(a)),round(cy-rad*math.sin(a)))
+        cv2.fillPoly(overlay,[np.array([(cx,cy)]+[pt(a) for a in range(0,181,3)],np.int32)],(25,75,29))
+        cv2.addWeighted(overlay,.34,frame,.66,0,frame)
+        center=blaze_runtime.clamp(camera_pan,0,180)
+        lo,hi=max(0.,center-fov/2),min(180.,center+fov/2)
+        overlay=frame.copy()
+        cv2.fillPoly(overlay,[np.array([(cx,cy)]+[pt(lo+(hi-lo)*i/45) for i in range(46)],np.int32)],(46,145,74))
+        cv2.addWeighted(overlay,.40,frame,.60,0,frame)
+        for deg in range(0,181,30):cv2.line(frame,(cx,cy),pt(deg),(95,208,120),1,cv2.LINE_AA)
+        for radius in (r//2,r):
+            cv2.polylines(frame,[np.array([pt(a,radius) for a in range(181)],np.int32)],False,(95,208,120),1,cv2.LINE_AA)
+        for angle in (lo,hi):cv2.line(frame,(cx,cy),pt(angle),(140,245,155),1,cv2.LINE_AA)
+        try:
+            if cannon_pan is not None and math.isfinite(float(cannon_pan)):
+                angle=blaze_runtime.clamp(float(cannon_pan),*pan_limits)
+                cv2.line(frame,(cx,cy),pt(angle,int(r*.9)),(65,65,255),1,cv2.LINE_AA)
+        except (TypeError,ValueError):pass
+        x=cx+r+10;top=cy-r;bottom=cy
+        cv2.rectangle(frame,(x-3,top),(x+3,bottom),(105,205,112),1)
+        for yy in range(top+8,bottom,8):cv2.line(frame,(x-2,yy),(x+2,yy),(65,142,76),1)
+        try:
+            if cannon_tilt is not None and math.isfinite(float(cannon_tilt)):
+                low,high=tilt_limits
+                fraction=blaze_runtime.clamp((float(cannon_tilt)-low)/max(1.,high-low),0,1)
+                yy=round(bottom-fraction*(bottom-top))
+                cv2.line(frame,(x-7,yy),(x+7,yy),(65,65,255),2,cv2.LINE_AA)
+        except (TypeError,ValueError):pass
+
+    @staticmethod
+    def _radar_angles(operator, telemetry, virtual=None, last_pan=None, last_tilt=None):
+        """Setpoints continuam disponíveis quando não chega nenhum quadro de vídeo."""
+        if virtual is not None:
+            return (virtual['camera_pan_deg'],
+                    90.+virtual['pan'] if virtual['mode']=='manual' else virtual['pan'],
+                    virtual['tilt'])
+        camera=telemetry.get('camera_pan_commanded')
+        pan=telemetry.get('servo_pan_commanded')
+        tilt=telemetry.get('servo_tilt_commanded')
+        if camera is None:camera=operator.get('camera_pan_deg',90.)
+        if pan is None:
+            pan=(operator.get('manual_pan') if operator.get('manual_target_valid')
+                 else last_pan)
+        if tilt is None:
+            tilt=(operator.get('manual_tilt') if operator.get('manual_target_valid')
+                  else last_tilt)
+        return camera,pan,tilt
+
     def _overlay_aim(self, frame, operator, telemetry, vision_record):
         h,w=frame.shape[:2]
         now=time.monotonic()
@@ -747,6 +839,7 @@ class CentralOperador(blaze_runtime.OperatorApp):
                 now = time.monotonic()
                 self.sim_controls = _r12_decode(packet)
                 self.sim_state['vision_record']=getattr(self.vision.engine,'last_record',{})
+                self.sim_state['person_active']=bool(self.vision.snapshot().person_detected)
                 if packet is None:
                     # Perda do controle desarma a simulação local.
                     self.sim_state['connected'] = False
@@ -755,13 +848,12 @@ class CentralOperador(blaze_runtime.OperatorApp):
                     self.sim_state['link_hold_since'] = None
                     self.sim_state['stop_hold_since'] = None
                 _r12_apply_control(self.sim_state, self.sim_controls, now,
-                                   now-self.sim_last_tick,
-                                   max(10, min(80, float(self.config.data.get('control', {})
-                                                         .get('speed_limit_rpm', 80)))),
+                                   now-self.sim_last_tick,80.,
                                    self.config.data.get('geometry', {}),
-                                   self.config.data.get('control', {}))
+                                   {**self.config.data.get('control', {}),
+                                    'speed_limit_percent':self.inputs.speed_limit_percent})
                 target_record = self.sim_state['vision_record']
-                if (self.sim_state['mode'] == 'auto' and target_record.get('target_valid')
+                if (self.sim_state['mode'] == 'auto' and not self.sim_state['person_latched'] and target_record.get('target_valid')
                         and not target_record.get('blocked')):
                     self.sim_state['pan'] = target_record.get('pan_deg') or self.sim_state['pan']
                     self.sim_state['tilt'] = target_record.get('tilt_deg') or self.sim_state['tilt']
@@ -769,11 +861,16 @@ class CentralOperador(blaze_runtime.OperatorApp):
             vision = self.vision.snapshot()
             stamp = getattr(vision, 'frame_stamp', 0) or 0
             vision_recent = bool(stamp and time.monotonic() - stamp < 1.0)
+            if not self.simulation:
+                self.inputs.update_person_safety(bool(vision.person_detected),vision_recent)
+                operator=self.inputs.snapshot()
             if self.simulation and not vision.valid and self.sim_state['mode'] == 'auto':
                 self.sim_state['mode'] = 'manual'
                 self.sim_state['hint'] = ('Visao indisponivel: modo manual ativo. '
                                           'Selecione autonomia novamente apos o retorno do video.')
             raw_frame, raw_stamp = self.camera.latest()
+            camera_recent=bool(raw_frame is not None and raw_stamp and
+                               time.monotonic()-raw_stamp<=1.)
             if not self.simulation:
                 self.inputs.update_camera(getattr(self.vision.engine,'last_record',{}),
                     operator.get('requested_mode','manual'), vision_recent,
@@ -812,9 +909,9 @@ class CentralOperador(blaze_runtime.OperatorApp):
                 lifetime = max(.1, float(params.get('restore_seconds', 6)))
                 radius = max(2, int(params.get('erase_radius_px', 25)))
                 self.manual_trail = [p for p in self.manual_trail if now-p[0] < lifetime]
-                if (self.sim_state['connected'] and not self.sim_state['emergency'] and self.sim_state['water'] and
+                if (self.sim_state['connected'] and not self.sim_state['emergency'] and not self.sim_state['person_latched'] and self.sim_state['water'] and
                         self.sim_state['pressure'] > .08 and
-                        not getattr(vision, 'person_detected', False)):
+                        (not getattr(vision, 'person_detected', False) or self.sim_state['person_policy']==2)):
                     self.manual_trail.append((now, x, y))
                 self.manual_trail = self.manual_trail[-500:]
                 for instant, px, py in self.manual_trail:
@@ -825,9 +922,9 @@ class CentralOperador(blaze_runtime.OperatorApp):
                     mask = np.zeros(roi.shape[:2], dtype=np.uint8)
                     cv2.circle(mask, (px-x0, py-y0), radius, 255, -1)
                     roi[mask > 0] = (roi[mask > 0]*(1.-alpha)).astype(np.uint8)
-                if (self.sim_state['connected'] and not self.sim_state['emergency'] and self.sim_state['water'] and
+                if (self.sim_state['connected'] and not self.sim_state['emergency'] and not self.sim_state['person_latched'] and self.sim_state['water'] and
                         self.sim_state['pressure'] > .08 and
-                        not getattr(vision, 'person_detected', False)):
+                        (not getattr(vision, 'person_detected', False) or self.sim_state['person_policy']==2)):
                     drop = float(params.get('jet_drop_px', 90))
                     points = []
                     for t in np.linspace(0., 1., 40):
@@ -835,17 +932,41 @@ class CentralOperador(blaze_runtime.OperatorApp):
                                        round(h0-1+(y-(h0-1)-drop)*t+drop*t*t)))
                     cv2.polylines(frame, [np.asarray(points, np.int32)], False,
                                   (255, 110, 0), max(5, w0//120), cv2.LINE_AA)
-            if frame is None or not stamp or time.monotonic() - stamp > 1.0:
+            if frame is None or not stamp or time.monotonic() - stamp > 1.0 or not camera_recent:
                 frame = np.zeros((540, 960, 3), dtype=np.uint8)
-                cv2.putText(frame, 'AGUARDANDO CAMERA / QUADRO RECENTE', (35, 275),
-                            cv2.FONT_HERSHEY_SIMPLEX, .75, (235, 235, 235), 2, cv2.LINE_AA)
+                cv2.putText(frame, 'SEM VIDEO - CONTROLE MANUAL DISPONIVEL', (35, 270),
+                            cv2.FONT_HERSHEY_SIMPLEX, .65, (235, 235, 235), 2, cv2.LINE_AA)
             else:
                 frame=frame.copy()
                 self._overlay_aim(frame,operator,telemetry,
                                   getattr(self.vision.engine,'last_record',{}))
                 camera_angle=(self.sim_state['camera_pan_deg'] if self.simulation else
                     telemetry.get('camera_pan_commanded',operator.get('camera_pan_deg',90.)))
-                self._angular_scale(frame,camera_angle)
+                fov=self._camera_fov(self.config.vision.calibration)
+                self._angular_scale(frame,camera_angle,fov)
+            calibration=self.config.vision.calibration
+            limits=calibration.get('angle_limits',{}) if isinstance(calibration,dict) else {}
+            pan_limits=limits.get('pan',(0.,180.));tilt_limits=limits.get('tilt',(0.,180.))
+            if not (isinstance(pan_limits,(tuple,list)) and len(pan_limits)==2 and pan_limits[0]<pan_limits[1]):pan_limits=(0.,180.)
+            if not (isinstance(tilt_limits,(tuple,list)) and len(tilt_limits)==2 and tilt_limits[0]<tilt_limits[1]):tilt_limits=(0.,180.)
+            virtual=self.sim_state if self.simulation else None
+            camera_angle,cannon_pan,cannon_tilt=self._radar_angles(
+                operator,telemetry,virtual,self.inputs.servo_pan_commanded,
+                self.inputs.servo_tilt_commanded)
+            self._overlay_radar(frame,camera_angle,cannon_pan,cannon_tilt,
+                                self._camera_fov(calibration),pan_limits,tilt_limits)
+            linked_now=bool(self.connection.connected and telemetry)
+            armed_now=(virtual['connected'] and not virtual['emergency'] and
+                       not virtual['person_latched'] and
+                       (not virtual['person_active'] or virtual['person_policy']==2) and
+                       not self.sim_controls.get('stop',False)
+                       if virtual else bool(telemetry.get('armed')) and linked_now and
+                       not operator.get('stop',False) and
+                       not operator.get('person_latched',False))
+            if not armed_now:
+                cv2.rectangle(frame,(4,4),(frame.shape[1]-5,frame.shape[0]-5),(45,45,245),7)
+                cv2.putText(frame,'DESARMADO',(22,49),cv2.FONT_HERSHEY_SIMPLEX,
+                            1.25,(45,45,245),3,cv2.LINE_AA)
             width = max(600, self.video_label.winfo_width() - 8)
             height = max(360, self.video_label.winfo_height() - 8)
             h, w = frame.shape[:2]
@@ -882,12 +1003,25 @@ class CentralOperador(blaze_runtime.OperatorApp):
                                 'Conectado (simulado)' if connected_ui else 'Desconectado',
                                 'good' if connected_ui else 'bad')
             if stop_held>0:
-                self._set_state('armed',f'Seta ↓ {min(stop_held,1.):.1f} / 1.0 s','steady')
+                pending=('Aguarde 0,25 s' if stop_held<.25 else
+                         'Rearme manual' if stop_held<1. else
+                         'Auto 1 s' if stop_held<3. else 'Sem bloqueio por pessoa')
+                self._set_state('armed',f'Seta ↓ {stop_held:.1f} s','steady')
+                self._set_state('person_policy',f'Seleção: {pending}','steady')
             else:
-                armed=(virtual['connected'] and not virtual['emergency'] if virtual else
-                       telemetry.get('armed') if linked else False)
+                if virtual:
+                    armed=(virtual['connected'] and not virtual['emergency'] and
+                           not virtual['person_latched'] and
+                           (not virtual['person_active'] or virtual['person_policy']==2))
+                else:
+                    armed=(linked and bool(telemetry.get('armed')) and
+                           not operator.get('person_latched',False) and
+                           not operator.get('stop',False))
                 self._set_state('armed','Armado' if armed else 'Desarmado',
                                 'good' if armed else 'bad')
+                policy=virtual['person_policy'] if virtual else operator.get('person_policy',0)
+                self._set_state('person_policy',('Rearme manual','Auto após 1 s','Desativado')[int(policy)],
+                                'good' if int(policy)==1 else 'steady')
             mode=virtual['mode'] if virtual else operator.get('requested_mode')
             self._set_state('mode','Autônomo' if mode=='auto' else 'Manual' if mode=='manual' else '—',
                             'good' if mode=='auto' else 'bad' if mode=='manual' else 'neutral')
@@ -899,11 +1033,11 @@ class CentralOperador(blaze_runtime.OperatorApp):
             self._set_numeric('pressure',virtual['pressure'] if virtual else operator.get('pressure'),digits=2)
             self._set_numeric('drive_xy',(operator.get('drive_x'),operator.get('drive_y')),digits=2)
             self._set_numeric('cannon_xy',(operator.get('cannon_x'),operator.get('cannon_y')),digits=2)
-            left_cmd = virtual['left_rpm']/max(1., float(self.config.data.get('control', {}).get('speed_limit_rpm', 80))) if virtual else telemetry.get('drive_left_commanded')
-            right_cmd = virtual['right_rpm']/max(1., float(self.config.data.get('control', {}).get('speed_limit_rpm', 80))) if virtual else telemetry.get('drive_right_commanded')
+            left_cmd = virtual['left_rpm']/80. if virtual else telemetry.get('drive_left_commanded')
+            right_cmd = virtual['right_rpm']/80. if virtual else telemetry.get('drive_right_commanded')
             if left_cmd is None or right_cmd is None:
                 x,y=float(operator.get('drive_x',0)),float(operator.get('drive_y',0))
-                turn=_r12_steering(x)
+                turn=_r12_steering(x,self.config.data.get('control',{}).get('steering_sensitivity_percent',50))
                 left_cmd,right_cmd=(blaze_runtime.clamp(-y+turn,-1,1),
                                     blaze_runtime.clamp(-y-turn,-1,1))
             self._set_numeric('left',left_cmd,digits=2)
@@ -948,13 +1082,13 @@ class CentralOperador(blaze_runtime.OperatorApp):
             if virtual:
                 if virtual['mode'] == 'auto':
                     last_record = getattr(self.vision.engine, 'last_record', {})
-                    virtual_jet = (virtual['connected'] and not virtual['emergency'] and
+                    virtual_jet = (virtual['connected'] and not virtual['emergency'] and not virtual['person_latched'] and
                                    bool(last_record.get('jet_permitted')) and
-                                   not getattr(vision, 'person_detected', False))
+                                   (not getattr(vision, 'person_detected', False) or virtual['person_policy']==2))
                 else:
-                    virtual_jet = (virtual['connected'] and not virtual['emergency'] and virtual['water'] and
+                    virtual_jet = (virtual['connected'] and not virtual['emergency'] and not virtual['person_latched'] and virtual['water'] and
                                    virtual['pressure'] > .08 and
-                                   not getattr(vision, 'person_detected', False))
+                                   (not getattr(vision, 'person_detected', False) or virtual['person_policy']==2))
             self._set_state('jet', *self._command_state(virtual_jet if virtual else telemetry.get(
                 'jet_commanded',operator.get('jet_enable')),bool(virtual)))
             self._set_numeric('camera_select',virtual['camera_pan_deg'] if virtual else
@@ -971,7 +1105,7 @@ class CentralOperador(blaze_runtime.OperatorApp):
             if linked and not self.simulation and not self._matching_firmware():
                 self.status.set('FIRMWARE DIFERENTE DO SETUP SELECIONADO: saídas bloqueadas. '
                                 'Compile e grave a combinação mostrada no início do runtime.')
-            elif not raw_stamp:
+            elif not camera_recent:
                 reason = self.camera.last_error or f'Aguardando fonte {self.camera.source}'
                 self.status.set('Sem vídeo: modo manual disponível após conectar Xbox e ESP32 e rearmar. '
                                 'Detecção de pessoas e combate autônomo indisponíveis. '

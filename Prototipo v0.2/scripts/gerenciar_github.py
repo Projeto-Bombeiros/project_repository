@@ -23,7 +23,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 _SCRIPT_PARENT = Path(__file__).resolve().parents[1]
 ROOT = _SCRIPT_PARENT if (_SCRIPT_PARENT/'pc_operador').is_dir() else Path.cwd()
-DESTINATION = 'Protótipo V0.0'
+DESTINATION = 'Prototipo v0.2'
 URL = 'https://github.com/Projeto-Bombeiros/project_repository.git'
 SECRET_KEYS = ('password', 'ssid', 'token', 'secret', 'api_key', 'bt_pin', 'credential')
 PRIVATE_NAMES = {'config.json', 'secrets.h', 'setup_generated.h', 'network_credentials.json'}
@@ -39,10 +39,8 @@ ASCII_URL = re.compile(r'^[A-Za-z0-9._~:/@?&=%+\-]*$')
 
 
 def valid_path_field(value: str) -> bool:
-    """Somente ASCII digitado; conserva o nome obrigatório Protótipo V0.0."""
-    return bool(ASCII_PATH.fullmatch(value) or DESTINATION.startswith(value) or
-                (value.startswith(DESTINATION+'/') and
-                 ASCII_PATH.fullmatch(value[len(DESTINATION)+1:])))
+    """Aceita a edição de qualquer destino ASCII, inclusive versões novas."""
+    return bool(ASCII_PATH.fullmatch(value))
 
 
 def ascii_name(value: str) -> str:
@@ -257,6 +255,21 @@ class RepoSession:
                 raise ValueError('Já existe: ' + str(destination.relative_to(self.path)))
             run('mv', '--', source.relative_to(self.path), destination.relative_to(self.path), cwd=self.path)
 
+    def rename_root(self, old_name: str, new_name: str):
+        """Renomeia uma pasta de primeiro nível sem criar outra pasta acima."""
+        old = safe_path(old_name.rstrip('/'))
+        new = safe_path(new_name)
+        if len(old.parts) != 1 or len(new.parts) != 1:
+            raise ValueError('Selecione uma pasta da raiz e informe apenas o novo nome, sem /.')
+        if not ASCII_NAME.fullmatch(new_name):
+            raise ValueError('O novo nome deve usar letras sem acento, números, espaço, ponto, _ ou -.')
+        source, destination = self.path/old, self.path/new
+        if not source.is_dir() or source.is_symlink():
+            raise ValueError('A seleção não é uma pasta da raiz do repositório.')
+        if destination.exists():
+            raise ValueError('Já existe uma pasta com esse nome na raiz: ' + new_name)
+        run('mv', '--', old, new, cwd=self.path)
+
     def remove(self, names: list[str]):
         for name in names:
             path = safe_path(name)
@@ -307,7 +320,7 @@ class RepoSession:
             raise ValueError('Não há alterações preparadas.')
         run('config','user.name',name.strip(),cwd=self.path)
         run('config','user.email',email.strip(),cwd=self.path)
-        run('commit','-m','Organizar BLAZE em Protótipo V0.0',cwd=self.path)
+        run('commit','-m','Atualizar estrutura do BLAZE',cwd=self.path)
         run('push','origin','HEAD:'+self.branch,cwd=self.path)
 
     def close(self):
@@ -355,8 +368,8 @@ class Window:
                 entry = ttk.Entry(row, textvariable=variable, validate='key',
                                   validatecommand=(check, '%P'))
                 entry.pack(side='left', fill='x', expand=True)
-                Tooltip(entry, f'{field}: este campo bloqueia caracteres inválidos ao digitar. '
-                        'O nome obrigatório Protótipo V0.0 é permitido como exceção.')
+                Tooltip(entry, f'{field}: use letras sem acento, números, espaços, ponto, _ ou - '
+                        'nos nomes de pastas. O campo aceita outras versões, como Prototipo v0.2.')
         self.button(header, '1. Carregar GitHub (clone)', self.load,
                     'Cria uma cópia temporária da branch do GitHub. Não altera arquivos locais '
                     'nem envia nada ao repositório.').pack(anchor='w', pady=(8, 2))
@@ -375,6 +388,9 @@ class Window:
             ('Baixar seleção (clone/copy)', self.download, 'Copia os arquivos selecionados na árvore remota para uma pasta escolhida no PC.'),
             ('Criar pasta (add)', self.mkdir, 'Cria uma pasta na cópia temporária com .gitkeep para que o Git a armazene.'),
             ('Mover seleção (mv)', self.move, 'Move as pastas ou arquivos selecionados para outra pasta do repositório na cópia temporária.'),
+            ('Renomear pasta raiz (mv)', self.rename_root,
+             'Selecione uma pasta do primeiro nível na lista da direita e informe o novo nome. '
+             'O movimento é preparado na cópia temporária; confirme depois do resumo.'),
             ('Excluir seleção (rm)', self.delete, 'Prepara a exclusão da seleção remota. Nada é excluído do GitHub antes do commit e push.'),
             ('Prévia (status/diff)', self.preview, 'Mostra todas as inclusões, alterações, movimentos e exclusões preparados.'),
             ('2. Confirmar envio (commit/push)', self.publish, 'Após confirmação, registra as alterações em um commit e envia para a branch. Não usa force push.'),
@@ -637,6 +653,24 @@ class Window:
             self.run_async('Movendo seleção...',
                            lambda: session.move(names, dialog.result),
                            lambda _: (self.populate_remote(), self.write(session.summary())))
+
+    def rename_root(self):
+        session = self.require()
+        names = self.selected(self.remote)
+        if len(names) != 1 or not names[0].endswith('/') or names[0].count('/') != 1:
+            raise ValueError('Selecione somente uma pasta da raiz na lista do GitHub (à direita).')
+        old_name = names[0][:-1]
+        initial = self.folder.get() if self.folder.get() != old_name else ascii_name(old_name)
+        dialog = PathDialog(self.app, 'Renomear pasta raiz (mv)',
+                            f'Novo nome para {old_name}/ (sem /):', initial)
+        if dialog.result:
+            new_name = dialog.result
+            def done(_):
+                self.folder.set(new_name)
+                self.populate_remote()
+                self.write(session.summary())
+            self.run_async('Renomeando a pasta raiz na cópia temporária...',
+                           lambda: session.rename_root(old_name, new_name), done)
 
     def delete(self):
         session = self.require()

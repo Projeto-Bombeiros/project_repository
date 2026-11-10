@@ -166,7 +166,7 @@ import json
 from typing import Any
 
 MAX_LINE = 4096  # Permite telemetria completa de setups com nomes longos.
-REQUIRED_PROTOCOL_VERSION = 4  # PWM fixo e feedback físico opcional na telemetria.
+REQUIRED_PROTOCOL_VERSION = 5  # Políticas de pessoa e sensibilidade de curva por setup.
 
 def protocol_compatible(telemetry):
     try:
@@ -240,6 +240,7 @@ def control_message(input_state: dict[str, Any], vision_state: dict[str, Any]) -
         "mode": "auto" if get("requested_mode") == "auto" else "manual",
         "drive_x": clamp(get("drive_x", 0), -1, 1),
         "drive_y": clamp(get("drive_y", 0), -1, 1),
+        "steering_sensitivity_percent": clamp(get("steering_sensitivity_percent", 50), 0, 100),
         "cannon_x": clamp(get("cannon_x", 0), -1, 1),
         "cannon_y": clamp(get("cannon_y", 0), -1, 1),
         "cannon_rate_deg_s": clamp(get("cannon_rate_deg_s", 90), 1, 360),
@@ -263,6 +264,7 @@ def control_message(input_state: dict[str, Any], vision_state: dict[str, Any]) -
         "vision_valid": bool(vision_state.get("valid", False)),
         "target_valid": bool(vision_state.get("target_valid", False)),
         "person_detected": bool(vision_state.get("person_detected", False)),
+        "person_policy": int(clamp(get("person_policy", 0), 0, 2)),
         "cool_manual": bool(get("cool_manual", False)),
         "cool_internal": bool(get("cool_internal", False)),
         "cool_external": bool(get("cool_external", False)),
@@ -446,6 +448,13 @@ class OperatorInputs:
         self.camera_left = self.camera_right = False
         self.speed_limit_rpm = float(speed_limit_rpm)
         self.calibrated_max_rpm = float(calibrated_max_rpm)
+        self.speed_limit_percent = 100.
+        self.steering_sensitivity_percent = 50.
+        self.person_policy = 0  # 0 rearme manual, 1 auto após 1 s, 2 sem bloqueio por pessoa
+        self.person_active = False
+        self.person_latched = False
+        self.person_clear_since = None
+        self.person_auto_rearmed = False
         self.stop = True  # rearme explícito após a inicialização
         self.link_enabled = False
         self.rearm_until = 0.0
@@ -504,6 +513,62 @@ class OperatorInputs:
                     self.emergency = False
                     self.stop = False
                     self.rearm_until = time.monotonic() + .6
+
+    def select_stop_hold(self, duration: float) -> None:
+        """Seleciona a política na soltura; a seta pressionada bloqueia movimento."""
+        if duration < .25:
+            return
+        with self._lock:
+            if duration >= 3.:
+                self.person_policy = 2
+                self.person_latched = False
+                self.person_auto_rearmed = True
+                self.person_clear_since = None
+                if (self.link_enabled and self._want_link and not self.stop and
+                        not self.emergency and abs(self.drive_x) <= .05 and
+                        abs(self.drive_y) <= .05):
+                    self.rearm_until = time.monotonic() + .6
+            elif duration >= 1.:
+                self.person_policy = 1
+                self.person_auto_rearmed = False
+                self.person_clear_since = time.monotonic() if not self.person_active else None
+            else:
+                self.person_policy = 0
+                if self.emergency or self.stop or self.person_latched:
+                    if self.link_enabled and abs(self.drive_x) <= .05 and abs(self.drive_y) <= .05:
+                        self.emergency = self.stop = False
+                        self.person_latched = False
+                        self.rearm_until = time.monotonic() + .6
+                else:
+                    self.emergency = self.stop = True
+                    self.water_on = self.jet_enable = False
+                    self.rearm_until = 0.
+
+    def update_person_safety(self, detected: bool, vision_recent: bool) -> None:
+        """Aplica a política selecionada sem rearme automático da parada do operador."""
+        now = time.monotonic()
+        with self._lock:
+            if detected:
+                self.person_active = True
+                if self.person_policy != 2:
+                    self.person_latched = True
+                self.person_clear_since = None
+                self.person_auto_rearmed = False
+            elif self.person_active:
+                self.person_active = False
+                self.person_clear_since = now if vision_recent else None
+            if not vision_recent:
+                self.person_clear_since = None
+            elif (self.person_clear_since is None and not detected and
+                  self.person_policy in (1, 2)):
+                self.person_clear_since = now
+            if (self.person_policy in (1, 2) and not self.person_auto_rearmed and
+                    self.person_clear_since is not None and now-self.person_clear_since >= 1. and
+                    self.link_enabled and self._want_link and not self.stop and not self.emergency and
+                    abs(self.drive_x) <= .05 and abs(self.drive_y) <= .05):
+                self.rearm_until = now + .25
+                self.person_auto_rearmed = True
+                self.person_latched = False
 
     def acknowledge_mode(self, mode: str, jet_virtual: bool):
         with self._lock:
@@ -572,14 +637,12 @@ class OperatorInputs:
                 self.camera_left, self.camera_right = pressed('camera_left'), pressed('camera_right')
                 self.focus=max(0.,min(1.,self.focus+(int(pressed('rb'))-int(pressed('r3')))*.015))
                 now=time.monotonic()
-                for name,duration in [('link_hold',2.),('stop',1.)]:
+                for name,duration in [('link_hold',2.)]:
                     if pressed(name):
                         if self._held_since[name] is None:self._held_since[name]=now
                         if now-self._held_since[name]>=duration and not self._held_fired[name]:
                             self._held_fired[name]=True
-                            if name=='stop':self._pending_actions.append(
-                                'rearm' if self.emergency or self.stop else 'stop')
-                            elif not self._want_link:
+                            if not self._want_link:
                                 if abs(x)<.08 and abs(y)<.08 and self.lt<.08 and self.pressure<.08:
                                     self._want_link=True
                                     # A conexão já pode estar ativa quando Start
@@ -589,6 +652,12 @@ class OperatorInputs:
                                         self.rearm_until=now+.6
                             else:self._want_link=False;self.stop=True;self.water_on=False
                     else:self._held_since[name]=None;self._held_fired[name]=False
+                if pressed('stop'):
+                    if self._held_since['stop'] is None:self._held_since['stop']=now
+                elif self._held_since['stop'] is not None:
+                    duration=now-self._held_since['stop']
+                    self._held_since['stop']=None
+                    self._pending_actions.append(('stop_hold',duration))
                 for name in ('mode','cool_internal','cool_external','leds','overlay','water'):
                     current=pressed(name)
                     if current and not self.previous_buttons.get(name, False):
@@ -616,25 +685,22 @@ class OperatorInputs:
             pending = self._pending_actions[:]
             self._pending_actions.clear()
         for name in pending:
-            self.action(name)
+            if isinstance(name,tuple) and name[0]=='stop_hold':
+                self.select_stop_hold(name[1])
+            else:self.action(name)
 
     def snapshot(self) -> dict:
         with self._lock:
             x, y = self.drive_x, self.drive_y
-            # Sem RPM máxima medida não é possível garantir o teto escolhido.
-            if self.calibrated_max_rpm > 0:
-                scale = min(1., max(0., self.speed_limit_rpm) / self.calibrated_max_rpm)
-                turn = .45 * x * abs(x)
-                denominator = max(1., abs(-y + turn), abs(-y - turn))
-                throttle=self.lt if self._want_link and not self.brake else 0.
-                x, y = x * scale * throttle / denominator, y * scale * throttle / denominator
-            else:
-                x = y = 0.
+            scale = clamp(self.speed_limit_percent / 100., 0., 1.)
+            throttle=self.lt if self._want_link and not self.brake else 0.
+            x, y = x * scale * throttle, y * scale * throttle
             return {
                 "mode": self.ack_mode or self.requested_mode,
                 "requested_mode": self.requested_mode,
-                "drive_x": x if self.link_enabled else 0.,
-                "drive_y": y if self.link_enabled else 0.,
+                "drive_x": x if self.link_enabled and self._held_since['stop'] is None else 0.,
+                "drive_y": y if self.link_enabled and self._held_since['stop'] is None else 0.,
+                "steering_sensitivity_percent": self.steering_sensitivity_percent,
                 "throttle": self.lt if self._want_link and not self.brake else 0.,
                 "cannon_x": self.cannon_x if self.link_enabled else 0.,
                 "cannon_y": self.cannon_y if self.link_enabled else 0.,
@@ -644,7 +710,7 @@ class OperatorInputs:
                 "manual_tilt": self.manual_target_tilt if self.manual_target_tilt is not None else 90.,
                 "auto_follow_pan": self.auto_follow_pan,
                 "auto_follow_tilt": self.auto_follow_tilt,
-                "cannon_rate_deg_s": min(65., max(20., self.speed_limit_rpm * 6.)),
+                "cannon_rate_deg_s": 65.,
                 "cool_manual": self.cool_internal or self.cool_external,
                 "cool_internal": self.cool_internal,
                 "cool_external": self.cool_external,
@@ -654,6 +720,8 @@ class OperatorInputs:
                 "focus": self.focus,
                 "brake": self.brake,
                 "emergency": self.emergency,
+                "person_policy": self.person_policy,
+                "person_latched": self.person_latched,
                 "leds_on": self.leds_on,
                 "overlay_visible": self.overlay_visible,
                 "camera_pan_deg": self.camera_pan_deg,
@@ -666,7 +734,9 @@ class OperatorInputs:
                 "stop_hold_seconds": (max(0.,time.monotonic()-self._held_since['stop'])
                                       if self._held_since['stop'] is not None else 0.),
                 "jet_virtual_ack": self.jet_virtual_ack and time.monotonic() - self.last_ack < .75,
-                "stop": self.stop or not self._want_link,
+                "stop": (self.stop or not self._want_link or
+                         (self._held_since['stop'] is not None and
+                          time.monotonic()-self._held_since['stop'] >= .25)),
                 "rearm": time.monotonic() <= self.rearm_until,
             }
 
@@ -2160,6 +2230,8 @@ class OperatorApp:
                                      float(config.data.get("control", {}).get("speed_limit_rpm", 80)),
                                      float(config.data["geometry"].get("output_max_rpm", 0)),
                                      config.data.get("control",{}).get("input_bindings",{}))
+        self.inputs.speed_limit_percent = float(config.data.get('control',{}).get('speed_limit_percent',100))
+        self.inputs.steering_sensitivity_percent = float(config.data.get('control',{}).get('steering_sensitivity_percent',50))
         cam = config.data["camera"]
         self.camera = CameraSource(config.data["vision"].get("camera_source",config.camera_source()), cam["reconnect_seconds"],
                                    cam.get("mdns_name", ""), cam.get("stream_path", "/live"),
@@ -2290,6 +2362,7 @@ class OperatorApp:
             self.inputs.buttons = self.config.data["xbox_buttons"]
             self.inputs.bindings.update(self.config.data.get("control",{}).get("input_bindings",{}))
             self.inputs.speed_limit_rpm = float(self.config.data.get("control", {}).get("speed_limit_rpm", 80))
+            self.inputs.steering_sensitivity_percent = float(self.config.data.get('control',{}).get('steering_sensitivity_percent',50))
             self.inputs.calibrated_max_rpm = float(self.config.data["geometry"].get("output_max_rpm", 0))
             self.status.set(f"Parâmetros carregados: {self.config.vision.source_name}")
         except (OSError, ValueError, RuntimeError) as exc:

@@ -204,7 +204,7 @@ CentralSnapshot Central::update(const Command &cmd, bool connected,
     armed_ = false;
     rearm_released_ = !cmd.rearm;
     state.reason = "vision_unavailable";
-  } else if (cmd.person_detected) {
+  } else if (cmd.person_detected && cmd.person_policy != 2) {
     armed_ = false;
     rearm_released_ = !cmd.rearm;
     state.reason = "person_detected";
@@ -224,7 +224,7 @@ CentralSnapshot Central::update(const Command &cmd, bool connected,
   // obrigatoria para o modo autonomo; parada, rearme e enlace valem em ambos.
   state.safe = connected && cmd.valid && !cmd.calibrating &&
                (!auto_mode_ || cmd.vision_valid) &&
-               !cmd.person_detected && !cmd.stop;
+               (!cmd.person_detected || cmd.person_policy == 2) && !cmd.stop;
   state.allow_motion = state.safe && armed_ && !cmd.brake;
   state.allow_jet = state.safe && armed_ && cmd.water_on &&
                     (!auto_mode_ || cmd.target_valid);
@@ -318,7 +318,8 @@ MotionReport Motion::update(const Command &cmd, const CentralSnapshot &state) {
   float target_left = 0, target_right = 0;
   if (report.configured && state.allow_motion) {
     // Joystick 1: frente/trás + giro, sem cálculo na central.
-    const TrackTargets targets = mixDrive(cmd.drive_x, cmd.drive_y);
+    const TrackTargets targets = mixDrive(cmd.drive_x, cmd.drive_y,
+                                         cmd.steering_sensitivity_percent);
     target_left = targets.left;
     target_right = targets.right;
     if (std::fabs(target_left) < .08f) target_left = 0;
@@ -752,6 +753,12 @@ bool NetLink::parse(const char *line, Command &output) {
   Command tmp;
   if (doc["seq"].is<unsigned long>()) tmp.seq = doc["seq"].as<unsigned long>();
   tmp.auto_mode = strcmp(mode, "auto") == 0;
+  if (!number(doc["steering_sensitivity_percent"],
+              tmp.steering_sensitivity_percent, 0, 100)) return false;
+  float person_policy = 0;
+  if (!number(doc["person_policy"], person_policy, 0, 2) ||
+      std::floor(person_policy) != person_policy) return false;
+  tmp.person_policy = uint8_t(person_policy);
   if (!number(doc["drive_x"], tmp.drive_x, -1, 1) ||
       !number(doc["drive_y"], tmp.drive_y, -1, 1) ||
       !number(doc["cannon_x"], tmp.cannon_x, -1, 1) ||
@@ -873,7 +880,7 @@ void NetLink::sendTelemetry(const CentralSnapshot &state, const SafetyReport &s,
   if (!linked()) return;
   StaticJsonDocument<2048> doc;
   doc["type"] = "telemetry";
-  doc["protocol_version"] = 4;
+  doc["protocol_version"] = 5;
   doc["seq"] = command_.seq;
   doc["fast"] = false;
   doc["connected"] = state.connected;
@@ -943,7 +950,7 @@ void NetLink::sendFastTelemetry(const CentralSnapshot &state,
   if (!linked()) return;
   StaticJsonDocument<768> doc;
   doc["type"] = "telemetry";
-  doc["protocol_version"] = 4;
+  doc["protocol_version"] = 5;
   doc["fast"] = true;
   doc["seq"] = command_.seq;
   doc["mode"] = state.auto_mode ? "auto" : "manual";
